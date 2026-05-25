@@ -1,0 +1,2430 @@
+<!DOCTYPE html>
+<!--
+  Video Surfer — browser-based video synthesis
+  Copyright © 2026 Slow Cities
+
+  Licensed under Creative Commons Attribution-NonCommercial 4.0 International
+  (CC BY-NC 4.0). https://creativecommons.org/licenses/by-nc/4.0/
+
+  You may use, share, adapt, and perform with this freely, including paid
+  performances and gigs. You may not sell it or bundle it into a product or
+  service you sell. Keep this notice and attribution to Slow Cities intact.
+  For commercial use beyond live performance, get in touch.
+-->
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Video Surfer</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { width: 100%; height: 100%; overflow: hidden; background: #000; font-family: -apple-system, BlinkMacSystemFont, "SF Mono", Menlo, monospace; color: #d0d0d0; touch-action: none; }
+  #canvas { display: block; width: 100vw; height: 100vh; position: fixed; top: 0; left: 0; z-index: 1; }
+  #ui {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 10;
+    background: rgba(8, 8, 10, 0.92);
+    backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px);
+    border-top: 1px solid rgba(255,255,255,0.08);
+    transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    max-height: 70vh; overflow-y: auto; padding-bottom: env(safe-area-inset-bottom);
+  }
+  #ui.hidden { transform: translateY(calc(100% - 44px)); }
+  #toggle-bar {
+    height: 44px; display: flex; align-items: center; justify-content: space-between;
+    padding: 0 16px; cursor: pointer; user-select: none;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  #toggle-bar .title { font-size: 11px; letter-spacing: 0.15em; text-transform: uppercase; color: #888; font-weight: 600; }
+  #toggle-bar .chevron { font-size: 14px; color: #666; transition: transform 0.3s; }
+  #ui.hidden #toggle-bar .chevron { transform: rotate(180deg); }
+  #panels { padding: 12px; display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 380px) { #panels { grid-template-columns: 1fr; } }
+  .panel {
+    background: rgba(255,255,255,0.025); border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 10px; padding: 10px;
+  }
+  .panel h3 {
+    font-size: 9px; letter-spacing: 0.18em; text-transform: uppercase;
+    color: #6a9b6a; margin-bottom: 8px; font-weight: 700;
+  }
+  .panel.osc1 h3 { color: #c97a7a; }
+  .panel.osc2 h3 { color: #7a9bc9; }
+  .panel.lfo1 h3 { color: #c9a87a; }
+  .panel.lfo2 h3 { color: #b07ac9; }
+  .panel.rutt h3 { color: #7ac9b0; }
+  .panel.fb h3 { color: #c97ac9; }
+  .panel.bg h3 { color: #c9c97a; }
+  .row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .row:last-child { margin-bottom: 0; }
+  .row label { font-size: 10px; color: #aaa; width: 48px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.05em; }
+  .row .val { font-size: 10px; color: #ddd; width: 38px; text-align: right; font-variant-numeric: tabular-nums; flex-shrink: 0; }
+  input[type="range"] {
+    flex: 1; height: 24px; -webkit-appearance: none; appearance: none;
+    background: transparent; outline: none; margin: 0; padding: 0;
+  }
+  input[type="range"]::-webkit-slider-runnable-track {
+    height: 3px; background: rgba(255,255,255,0.12); border-radius: 2px;
+  }
+  input[type="range"]::-moz-range-track {
+    height: 3px; background: rgba(255,255,255,0.12); border-radius: 2px;
+  }
+  input[type="range"]::-webkit-slider-thumb {
+    -webkit-appearance: none; width: 20px; height: 20px; border-radius: 50%;
+    background: #d0d0d0; margin-top: -8.5px; cursor: pointer;
+    box-shadow: 0 0 0 1px rgba(0,0,0,0.3);
+  }
+  input[type="range"]::-moz-range-thumb {
+    width: 20px; height: 20px; border-radius: 50%; background: #d0d0d0;
+    border: none; cursor: pointer; box-shadow: 0 0 0 1px rgba(0,0,0,0.3);
+  }
+  .seg { display: flex; gap: 0; background: rgba(0,0,0,0.3); border-radius: 6px; padding: 2px; }
+  .seg button {
+    flex: 1; padding: 6px 4px; font-size: 9px; background: transparent;
+    color: #888; border: none; border-radius: 4px; cursor: pointer;
+    text-transform: uppercase; letter-spacing: 0.05em; font-family: inherit;
+    transition: all 0.15s;
+  }
+  .seg button.active { background: rgba(255,255,255,0.1); color: #fff; }
+  .seg.roygbiv button { font-weight: 700; font-size: 11px; padding: 6px 2px; }
+
+  /* Drag-and-drop audio overlay */
+  #dropOverlay {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(122, 201, 176, 0.15);
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border: 4px dashed rgba(122, 201, 176, 0.8);
+    display: none; align-items: center; justify-content: center;
+    pointer-events: none;
+    color: #7ac9b0; font-family: inherit; font-size: 18px;
+    text-transform: uppercase; letter-spacing: 0.2em; font-weight: 700;
+  }
+  #dropOverlay.active { display: flex; }
+
+  /* MIDI learn states */
+  .midi-armed { outline: 2px dashed #c97ac9 !important; outline-offset: 2px; animation: midi-pulse 1s ease-in-out infinite; }
+  @keyframes midi-pulse { 0%,100% { outline-color: #c97ac9; } 50% { outline-color: #ff66ff; } }
+  .midi-mapped { box-shadow: inset 0 0 0 1px rgba(201, 122, 201, 0.5) !important; }
+  .midi-learning .row label, .midi-learning .seg-row label { cursor: pointer; }
+  .midi-learning input[type="range"], .midi-learning .seg button, .midi-learning #bloomBtn { cursor: crosshair; }
+  .seg-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+  .seg-row label { font-size: 10px; color: #aaa; width: 48px; flex-shrink: 0; text-transform: uppercase; letter-spacing: 0.05em; }
+  .seg-row .seg { flex: 1; }
+  #hideUI {
+    position: fixed; top: 12px; right: 12px; z-index: 11;
+    width: 36px; height: 36px; border-radius: 50%;
+    background: rgba(0,0,0,0.4); backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
+    border: 1px solid rgba(255,255,255,0.15); color: #ccc;
+    font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center;
+    transition: opacity 0.3s;
+  }
+  #hideUI.dim { opacity: 0.15; }
+  #hideUI:active { opacity: 1; }
+</style>
+</head>
+<body>
+<canvas id="canvas"></canvas>
+<button id="hideUI" title="Hide controls">◐</button>
+<div id="dropOverlay">Drop audio file to load</div>
+
+<div id="ui">
+  <div id="toggle-bar">
+    <span class="title">Video Surfer</span>
+    <span class="chevron">▼</span>
+  </div>
+  <div id="panels">
+
+    <div class="panel osc1">
+      <h3>Oscillator 1</h3>
+      <div class="seg-row"><label>Wave</label>
+        <div class="seg" data-param="osc1Wave">
+          <button data-val="0" class="active">Sin</button>
+          <button data-val="1">Tri</button>
+          <button data-val="2">Sqr</button>
+          <button data-val="3">Saw</button>
+        </div>
+      </div>
+      <div class="seg-row"><label>Axis</label>
+        <div class="seg" data-param="osc1Axis">
+          <button data-val="0" class="active">H</button>
+          <button data-val="1">V</button>
+          <button data-val="2">Rad</button>
+          <button data-val="3">Diag</button>
+        </div>
+      </div>
+      <div class="row"><label>Freq</label><input type="range" id="osc1Freq" min="0.5" max="80" step="0.1" value="8"><span class="val" id="osc1FreqV">8.0</span></div>
+      <div class="row"><label>Phase</label><input type="range" id="osc1Phase" min="0" max="6.28" step="0.01" value="0"><span class="val" id="osc1PhaseV">0.00</span></div>
+      <div class="row"><label>Amp</label><input type="range" id="osc1Amp" min="0" max="1" step="0.01" value="0.8"><span class="val" id="osc1AmpV">0.80</span></div>
+      <div class="row"><label>Drift</label><input type="range" id="osc1Drift" min="-2" max="2" step="0.001" value="0"><span class="val" id="osc1DriftV">0.00</span></div>
+      <div class="row"><label>Hue</label><input type="range" id="osc1Hue" min="0" max="1" step="0.001" value="0"><span class="val" id="osc1HueV">0.00</span></div>
+      <div class="seg-row"><label>Color</label>
+        <div class="seg roygbiv" data-target="osc1Hue">
+          <button data-val="0.00" style="color:#ff5555">R</button>
+          <button data-val="0.08" style="color:#ff9944">O</button>
+          <button data-val="0.16" style="color:#ffdd33">Y</button>
+          <button data-val="0.33" style="color:#55dd55">G</button>
+          <button data-val="0.58" style="color:#5599ff">B</button>
+          <button data-val="0.72" style="color:#9966ff">I</button>
+          <button data-val="0.83" style="color:#dd66dd">V</button>
+        </div>
+      </div>
+      <div class="seg-row"><label>FM</label>
+        <div class="seg" data-param="fmOn">
+          <button data-val="0" class="active">Off</button>
+          <button data-val="1">On</button>
+        </div>
+      </div>
+      <div class="row"><label>FM Amt</label><input type="range" id="fmAmt" min="0" max="3" step="0.01" value="0.5"><span class="val" id="fmAmtV">0.50</span></div>
+      <div class="row"><label>FM Mod</label><input type="range" id="fmMod" min="0" max="1" step="0.01" value="0"><span class="val" id="fmModV">0.00</span></div>
+    </div>
+
+    <div class="panel osc2">
+      <h3>Oscillator 2</h3>
+      <div class="seg-row"><label>Wave</label>
+        <div class="seg" data-param="osc2Wave">
+          <button data-val="0" class="active">Sin</button>
+          <button data-val="1">Tri</button>
+          <button data-val="2">Sqr</button>
+          <button data-val="3">Saw</button>
+        </div>
+      </div>
+      <div class="seg-row"><label>Axis</label>
+        <div class="seg" data-param="osc2Axis">
+          <button data-val="0">H</button>
+          <button data-val="1" class="active">V</button>
+          <button data-val="2">Rad</button>
+          <button data-val="3">Diag</button>
+        </div>
+      </div>
+      <div class="row"><label>Freq</label><input type="range" id="osc2Freq" min="0.5" max="80" step="0.1" value="12"><span class="val" id="osc2FreqV">12.0</span></div>
+      <div class="row"><label>Phase</label><input type="range" id="osc2Phase" min="0" max="6.28" step="0.01" value="0"><span class="val" id="osc2PhaseV">0.00</span></div>
+      <div class="row"><label>Amp</label><input type="range" id="osc2Amp" min="0" max="1" step="0.01" value="0.6"><span class="val" id="osc2AmpV">0.60</span></div>
+      <div class="row"><label>Drift</label><input type="range" id="osc2Drift" min="-2" max="2" step="0.001" value="0"><span class="val" id="osc2DriftV">0.00</span></div>
+      <div class="row"><label>Hue</label><input type="range" id="osc2Hue" min="0" max="1" step="0.001" value="0.58"><span class="val" id="osc2HueV">0.58</span></div>
+      <div class="seg-row"><label>Color</label>
+        <div class="seg roygbiv" data-target="osc2Hue">
+          <button data-val="0.00" style="color:#ff5555">R</button>
+          <button data-val="0.08" style="color:#ff9944">O</button>
+          <button data-val="0.16" style="color:#ffdd33">Y</button>
+          <button data-val="0.33" style="color:#55dd55">G</button>
+          <button data-val="0.58" style="color:#5599ff">B</button>
+          <button data-val="0.72" style="color:#9966ff">I</button>
+          <button data-val="0.83" style="color:#dd66dd">V</button>
+        </div>
+      </div>
+      <div class="seg-row"><label>Clr Drift</label>
+        <div class="seg" data-param="osc2ClrDrift">
+          <button data-val="0" class="active">Off</button>
+          <button data-val="1">O1</button>
+          <button data-val="2">O2</button>
+          <button data-val="3">Both</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel lfo1">
+      <h3>LFO 1</h3>
+      <div class="seg-row"><label>Wave</label>
+        <div class="seg" data-param="lfo1Wave">
+          <button data-val="0" class="active">Sin</button>
+          <button data-val="1">Tri</button>
+          <button data-val="2">Sqr</button>
+          <button data-val="3">S/H</button>
+        </div>
+      </div>
+      <div class="seg-row"><label>Dest</label>
+        <div class="seg" data-param="lfo1Dest">
+          <button data-val="0" class="active">O1F</button>
+          <button data-val="1">O1H</button>
+          <button data-val="2">FBAMT</button>
+          <button data-val="3">FBHUE</button>
+        </div>
+      </div>
+      <div class="row"><label>Rate</label><input type="range" id="lfo1Rate" min="0.01" max="5" step="0.01" value="0"><span class="val" id="lfo1RateV">0.00</span></div>
+      <div class="row"><label>Depth</label><input type="range" id="lfo1Depth" min="0" max="1" step="0.01" value="0"><span class="val" id="lfo1DepthV">0.00</span></div>
+    </div>
+
+    <div class="panel lfo2">
+      <h3>LFO 2</h3>
+      <div class="seg-row"><label>Wave</label>
+        <div class="seg" data-param="lfo2Wave">
+          <button data-val="0" class="active">Sin</button>
+          <button data-val="1">Tri</button>
+          <button data-val="2">Sqr</button>
+          <button data-val="3">S/H</button>
+        </div>
+      </div>
+      <div class="seg-row"><label>Dest</label>
+        <div class="seg" data-param="lfo2Dest">
+          <button data-val="0" class="active">O2F</button>
+          <button data-val="1">O2H</button>
+          <button data-val="2">FBZM</button>
+          <button data-val="3">FBROT</button>
+        </div>
+      </div>
+      <div class="row"><label>Rate</label><input type="range" id="lfo2Rate" min="0.01" max="5" step="0.01" value="0"><span class="val" id="lfo2RateV">0.00</span></div>
+      <div class="row"><label>Depth</label><input type="range" id="lfo2Depth" min="0" max="1" step="0.01" value="0"><span class="val" id="lfo2DepthV">0.00</span></div>
+    </div>
+
+    <div class="panel rutt">
+      <h3>Rutt / Etra</h3>
+      <div class="seg-row"><label>Mode</label>
+        <div class="seg" data-param="ruttMode">
+          <button data-val="0">Wire</button>
+          <button data-val="1">Solid</button>
+          <button data-val="2" class="active">Off</button>
+        </div>
+      </div>
+      <div class="row"><label>Disp</label><input type="range" id="ruttDisp" min="0" max="2" step="0.01" value="0.6"><span class="val" id="ruttDispV">0.60</span></div>
+      <div class="row"><label>Tilt</label><input type="range" id="ruttTilt" min="-1.2" max="1.2" step="0.01" value="0.45"><span class="val" id="ruttTiltV">0.45</span></div>
+      <div class="row"><label>Rot</label><input type="range" id="ruttRot" min="-3.14" max="3.14" step="0.01" value="0"><span class="val" id="ruttRotV">0.00</span></div>
+      <div class="row"><label>Zoom</label><input type="range" id="ruttZoom" min="0.5" max="2.5" step="0.01" value="1.2"><span class="val" id="ruttZoomV">1.20</span></div>
+    </div>
+
+    <div class="panel fb">
+      <h3>Feedback</h3>
+      <div class="row"><label>Amount</label><input type="range" id="fbAmount" min="0" max="0.99" step="0.01" value="0"><span class="val" id="fbAmountV">0.00</span></div>
+      <div class="row"><label>Zoom</label><input type="range" id="fbZoom" min="0.85" max="1.15" step="0.001" value="1.01"><span class="val" id="fbZoomV">1.01</span></div>
+      <div class="row"><label>Rot</label><input type="range" id="fbRot" min="-0.15" max="0.15" step="0.001" value="0.01"><span class="val" id="fbRotV">0.01</span></div>
+      <div class="row"><label>Hue</label><input type="range" id="fbHue" min="-0.05" max="0.05" step="0.001" value="0"><span class="val" id="fbHueV">0.00</span></div>
+      <div class="seg-row" style="margin-top: 8px;"><label>Burst</label>
+        <div class="seg" data-param="bloomStyle">
+          <button data-val="0" class="active">White</button>
+          <button data-val="1">Color</button>
+          <button data-val="2">Geom</button>
+        </div>
+      </div>
+      <div class="row"><label>Intensity</label><input type="range" id="bloomIntensity" min="0" max="1" step="0.01" value="0.7"><span class="val" id="bloomIntensityV">0.70</span></div>
+      <button id="bloomBtn" style="width: 100%; padding: 14px; margin-top: 6px; background: rgba(201, 122, 201, 0.15); border: 1px solid rgba(201, 122, 201, 0.4); color: #c97ac9; border-radius: 6px; font-family: inherit; font-size: 12px; text-transform: uppercase; letter-spacing: 0.15em; font-weight: 700; cursor: pointer; user-select: none; -webkit-user-select: none; touch-action: manipulation;">Hold to Burst</button>
+    </div>
+
+    <div class="panel bg" style="grid-column: 1 / -1;">
+      <h3>Video Input</h3>
+      <div class="seg-row"><label>Source</label>
+        <div class="seg" data-param="vidSrc">
+          <button data-val="0" class="active">Camera</button>
+          <button data-val="1">Video</button>
+        </div>
+      </div>
+      <div class="seg-row"><label>Mode</label>
+        <div class="seg" data-param="camMode">
+          <button data-val="0" class="active">Off</button>
+          <button data-val="1">BG</button>
+          <button data-val="2">Disp</button>
+          <button data-val="3">Both</button>
+        </div>
+      </div>
+      <div class="row"><label>Mix</label><input type="range" id="camMix" min="0" max="1" step="0.01" value="0.7"><span class="val" id="camMixV">0.70</span></div>
+      <div class="row"><label>Bright</label><input type="range" id="camBright" min="0" max="2" step="0.01" value="1"><span class="val" id="camBrightV">1.00</span></div>
+
+      <div id="camCtrls">
+        <div class="seg-row" style="margin-top: 8px;"><label>Device</label>
+          <select id="camDevice" style="flex: 1; padding: 7px 8px; background: rgba(0,0,0,0.3); border: 1px solid rgba(255,255,255,0.1); color: #ddd; border-radius: 6px; font-family: inherit; font-size: 10px; cursor: pointer; -webkit-appearance: none; appearance: none;">
+            <option value="">Default / by facing</option>
+          </select>
+        </div>
+        <div class="seg-row" style="margin-top: 8px;"><label>Facing</label>
+          <div class="seg" data-param="camFacing">
+            <button data-val="0" class="active">Rear</button>
+            <button data-val="1">Front</button>
+          </div>
+        </div>
+        <div style="display: flex; gap: 6px; margin-top: 8px;">
+          <button id="camStart" style="flex: 1; padding: 8px; background: rgba(122, 201, 176, 0.15); border: 1px solid rgba(122, 201, 176, 0.4); color: #7ac9b0; border-radius: 6px; font-family: inherit; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer;">Enable Camera</button>
+          <button id="camMirror" style="flex: 0 0 auto; padding: 8px 12px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); color: #aaa; border-radius: 6px; font-family: inherit; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer;">Mirror: Auto</button>
+        </div>
+      </div>
+
+      <div id="vidCtrls" style="display: none;">
+        <div style="display: flex; gap: 6px; margin-top: 8px;">
+          <label for="vidFile" id="vidFileLabel" style="flex: 1; padding: 8px; background: rgba(122, 201, 176, 0.15); border: 1px solid rgba(122, 201, 176, 0.4); color: #7ac9b0; border-radius: 6px; font-family: inherit; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer; text-align: center;">Load or Drop Video</label>
+          <input type="file" id="vidFile" accept="video/*" style="display: none;">
+          <button id="vidPlay" style="flex: 0 0 auto; padding: 8px 16px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); color: #aaa; border-radius: 6px; font-family: inherit; font-size: 14px; cursor: pointer;" disabled>▶</button>
+          <button id="vidLoop" style="flex: 0 0 auto; padding: 8px 12px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); color: #aaa; border-radius: 6px; font-family: inherit; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer;">Loop</button>
+        </div>
+        <div class="row"><label>Pos</label><input type="range" id="vidPos" min="0" max="1" step="0.001" value="0" disabled><span class="val" id="vidPosV">0:00</span></div>
+        <div style="display: flex; gap: 6px; margin-top: 6px;">
+          <button id="vidMute" style="flex: 1; padding: 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); color: #aaa; border-radius: 6px; font-family: inherit; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer;">Audio: Muted</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="panel bg" style="grid-column: 1 / -1;">
+      <h3>Audio Reactivity</h3>
+      <div class="seg-row"><label>Source</label>
+        <div class="seg" data-param="audioSrc">
+          <button data-val="0" class="active">File</button>
+          <button data-val="1">Mic</button>
+        </div>
+      </div>
+      <div id="audioFileControls">
+      <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+        <label for="audioFile" id="audioFileLabel" style="flex: 1; padding: 8px; background: rgba(122, 201, 176, 0.15); border: 1px solid rgba(122, 201, 176, 0.4); color: #7ac9b0; border-radius: 6px; font-family: inherit; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer; text-align: center;">Load or Drop Audio</label>
+        <input type="file" id="audioFile" accept="audio/*" style="display: none;">
+        <button id="audioPlay" style="flex: 0 0 auto; padding: 8px 16px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); color: #aaa; border-radius: 6px; font-family: inherit; font-size: 14px; cursor: pointer;" disabled>▶</button>
+        <button id="audioLoop" style="flex: 0 0 auto; padding: 8px 12px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); color: #aaa; border-radius: 6px; font-family: inherit; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer;">Loop</button>
+      </div>
+      <div class="row"><label>Pos</label><input type="range" id="audioPos" min="0" max="1" step="0.001" value="0" disabled><span class="val" id="audioPosV">0:00</span></div>
+      <div class="row"><label>Vol</label><input type="range" id="audioVol" min="0" max="1" step="0.01" value="0.7"><span class="val" id="audioVolV">0.70</span></div>
+      </div>
+
+      <div id="audioMicControls" style="display: none;">
+        <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+          <button id="micStart" style="flex: 1; padding: 8px; background: rgba(122, 201, 176, 0.15); border: 1px solid rgba(122, 201, 176, 0.4); color: #7ac9b0; border-radius: 6px; font-family: inherit; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer;">Enable Mic</button>
+        </div>
+        <div class="row"><label>Gain</label><input type="range" id="micGain" min="0" max="4" step="0.01" value="1"><span class="val" id="micGainV">1.00</span></div>
+        <div style="font-size: 9px; color: #777; margin-top: 4px; letter-spacing: 0.03em;">Mic doesn't play through speakers — analyzed only.</div>
+      </div>
+
+      <div class="seg-row" style="margin-top: 10px;"><label>Bass</label>
+        <div class="seg" data-param="bassDest">
+          <button data-val="0" class="active">Disp</button>
+          <button data-val="1">O1F</button>
+          <button data-val="2">FB</button>
+          <button data-val="3">Rot</button>
+          <button data-val="4">Bri</button>
+        </div>
+      </div>
+      <div class="row"><label>B Amt</label><input type="range" id="bassAmt" min="0" max="2" step="0.01" value="0.8"><span class="val" id="bassAmtV">0.80</span></div>
+
+      <div class="seg-row"><label>Mid</label>
+        <div class="seg" data-param="midDest">
+          <button data-val="0">Disp</button>
+          <button data-val="1" class="active">O1F</button>
+          <button data-val="2">FB</button>
+          <button data-val="3">Rot</button>
+          <button data-val="4">Bri</button>
+        </div>
+      </div>
+      <div class="row"><label>M Amt</label><input type="range" id="midAmt" min="0" max="2" step="0.01" value="0.5"><span class="val" id="midAmtV">0.50</span></div>
+
+      <div class="seg-row"><label>Treb</label>
+        <div class="seg" data-param="trebDest">
+          <button data-val="0">Disp</button>
+          <button data-val="1">O1F</button>
+          <button data-val="2" class="active">FB</button>
+          <button data-val="3">Rot</button>
+          <button data-val="4">Bri</button>
+        </div>
+      </div>
+      <div class="row"><label>T Amt</label><input type="range" id="trebAmt" min="0" max="2" step="0.01" value="0.4"><span class="val" id="trebAmtV">0.40</span></div>
+
+      <div class="row"><label>Smooth</label><input type="range" id="audioSmooth" min="0" max="0.95" step="0.01" value="0.7"><span class="val" id="audioSmoothV">0.70</span></div>
+    </div>
+
+    <div class="panel bg" style="grid-column: 1 / -1;">
+      <h3>MIDI Control</h3>
+      <div style="display: flex; gap: 6px; margin-bottom: 8px; align-items: center;">
+        <div id="midiStatus" style="flex: 1; padding: 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); color: #888; border-radius: 6px; font-family: inherit; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; text-align: center;">MIDI: Not Started</div>
+        <button id="midiEnable" style="flex: 0 0 auto; padding: 8px 14px; background: rgba(122, 201, 176, 0.15); border: 1px solid rgba(122, 201, 176, 0.4); color: #7ac9b0; border-radius: 6px; font-family: inherit; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer;">Enable</button>
+      </div>
+      <div style="display: flex; gap: 6px; margin-bottom: 8px;">
+        <button id="midiLearn" style="flex: 1; padding: 8px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); color: #aaa; border-radius: 6px; font-family: inherit; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer;" disabled>Learn: Off</button>
+        <button id="midiClear" style="flex: 0 0 auto; padding: 8px 14px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.1); color: #aaa; border-radius: 6px; font-family: inherit; font-size: 10px; text-transform: uppercase; letter-spacing: 0.1em; cursor: pointer;" disabled>Clear All</button>
+      </div>
+      <div id="midiInfo" style="font-size: 9px; color: #777; line-height: 1.5; letter-spacing: 0.03em;">Click Enable to allow MIDI. Then Learn → click a control → move a knob/fader/button on your MIDI device to bind it. Sliders use pickup mode (no jumps).</div>
+      <div id="midiActivity" style="font-size: 9px; color: #6a9b6a; margin-top: 4px; font-variant-numeric: tabular-nums; min-height: 12px;"></div>
+    </div>
+
+    <div class="panel bg" style="grid-column: 1 / -1;">
+      <h3>Output</h3>
+      <div style="display: flex; gap: 6px; margin-bottom: 6px;">
+        <button id="popOutBtn" style="flex: 1; padding: 10px; background: rgba(122, 201, 176, 0.15); border: 1px solid rgba(122, 201, 176, 0.4); color: #7ac9b0; border-radius: 6px; font-family: inherit; font-size: 11px; text-transform: uppercase; letter-spacing: 0.12em; font-weight: 600; cursor: pointer;">Pop Out Visual</button>
+      </div>
+      <div id="popOutInfo" style="font-size: 9px; color: #777; line-height: 1.5; letter-spacing: 0.03em;">Opens a clean visual-only window. Drag it to your external display, then press F (fullscreen). The popup must stay open for the main window to send frames to it.</div>
+      <div id="popOutStatus" style="font-size: 9px; color: #6a9b6a; margin-top: 4px; min-height: 12px;"></div>
+      <div id="fpsDisplay" style="font-size: 9px; color: #888; margin-top: 4px; font-variant-numeric: tabular-nums; min-height: 12px;">FPS: —</div>
+    </div>
+
+    <div class="panel bg" style="grid-column: 1 / -1;">
+      <h3>Background &amp; Output</h3>
+      <div class="seg-row"><label>BG</label>
+        <div class="seg" data-param="bgMode">
+          <button data-val="0">White</button>
+          <button data-val="1" class="active">Black</button>
+          <button data-val="2">Green</button>
+        </div>
+      </div>
+      <div class="seg-row"><label>Blend</label>
+        <div class="seg" data-param="blendMode">
+          <button data-val="0" class="active">Add</button>
+          <button data-val="1">Sub</button>
+          <button data-val="2">Screen</button>
+          <button data-val="3">Mult</button>
+        </div>
+      </div>
+      <div class="row"><label>Mix</label><input type="range" id="oscMix" min="0" max="1" step="0.01" value="0.5"><span class="val" id="oscMixV">0.50</span></div>
+      <div class="row"><label>Bright</label><input type="range" id="bright" min="0" max="2" step="0.01" value="1"><span class="val" id="brightV">1.00</span></div>
+      <div class="row"><label>Contr</label><input type="range" id="contrast" min="0.2" max="3" step="0.01" value="1"><span class="val" id="contrastV">1.00</span></div>
+    </div>
+
+  </div>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdnjs.cloudflare.com/ajax/libs/three.js/0.160.0/three.module.min.js"
+  }
+}
+</script>
+<script type="module">
+import * as THREE from 'three';
+
+// ---------- State ----------
+const state = {
+  osc1Wave: 0, osc1Axis: 0, osc1Freq: 8, osc1Phase: 0, osc1Amp: 0.8, osc1Hue: 0, osc1Drift: 0,
+  osc2Wave: 0, osc2Axis: 1, osc2Freq: 12, osc2Phase: 0, osc2Amp: 0.6, osc2Hue: 0.58, osc2Drift: 0, osc2ClrDrift: 0,
+  lfo1Wave: 0, lfo1Dest: 0, lfo1Rate: 0, lfo1Depth: 0,
+  lfo2Wave: 0, lfo2Dest: 0, lfo2Rate: 0, lfo2Depth: 0,
+  ruttMode: 2, ruttDisp: 0.6, ruttTilt: 0.45, ruttRot: 0, ruttZoom: 1.2,
+  fbAmount: 0, fbZoom: 1.01, fbRot: 0.01, fbHue: 0,
+  bgMode: 1, blendMode: 0, oscMix: 0.5, bright: 1, contrast: 1,
+  camMode: 0, camFacing: 0, camMix: 0.7, camBright: 1, camMirror: -1,
+  camDeviceId: '',
+  vidSrc: 0, vidMuted: 1,
+  fmOn: 0, fmAmt: 0.5, fmMod: 0,
+  audioVol: 0.7, audioSmooth: 0.7,
+  audioSrc: 0, micGain: 1,
+  bassDest: 0, bassAmt: 0.8,
+  midDest: 1, midAmt: 0.5,
+  trebDest: 2, trebAmt: 0.4,
+  bloomStyle: 0, bloomIntensity: 0.7
+};
+
+// ---------- Three.js setup ----------
+const canvas = document.getElementById('canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: false, powerPreference: 'high-performance' });
+const DPR = Math.min(window.devicePixelRatio, 2);
+renderer.setPixelRatio(DPR);
+
+function getSize() { return { w: window.innerWidth, h: window.innerHeight }; }
+let { w, h } = getSize();
+renderer.setSize(w, h, false);
+
+// Two render targets for ping-pong feedback
+function makeRT() {
+  return new THREE.WebGLRenderTarget(Math.floor(w * 0.75), Math.floor(h * 0.75), {
+    minFilter: THREE.LinearFilter,
+    magFilter: THREE.LinearFilter,
+    format: THREE.RGBAFormat,
+    type: THREE.UnsignedByteType
+  });
+}
+let rtA = makeRT();
+let rtB = makeRT();
+
+// Scene 1: generate the oscillator pattern into an offscreen target
+const patternScene = new THREE.Scene();
+const patternCamera = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+
+const patternMat = new THREE.ShaderMaterial({
+  uniforms: {
+    uTime: { value: 0 },
+    uRes: { value: new THREE.Vector2(w, h) },
+    uPrev: { value: null },
+    // oscillators
+    uO1: { value: new THREE.Vector4(0, 0, 0, 0) }, // wave, axis, freq, phase
+    uO1Amp: { value: 0.8 },
+    uO2: { value: new THREE.Vector4(0, 1, 0, 0) },
+    uO2Amp: { value: 0.6 },
+    uOscMix: { value: 0.5 },
+    uO1Hue: { value: 0 },
+    uO2Hue: { value: 0.58 },
+    uBlendMode: { value: 0 },
+    uBgMode: { value: 1 },
+    uBright: { value: 1 },
+    uContrast: { value: 1 },
+    // feedback
+    uFbAmount: { value: 0 },
+    uFbZoom: { value: 1.01 },
+    uFbRot: { value: 0.01 },
+    uFbHue: { value: 0 },
+    uCam: { value: null },
+    uCamMode: { value: 0 },
+    uCamMix: { value: 0.7 },
+    uCamBright: { value: 1 },
+    uCamMirror: { value: 0 },
+    uCamAspect: { value: 1 },
+    uScreenAspect: { value: 1 },
+    uFmOn: { value: 0 },
+    uFmAmt: { value: 0.5 },
+    uBloomActive: { value: 0 },
+    uBloomStyle: { value: 0 },
+    uBloomIntensity: { value: 0.7 }
+  },
+  vertexShader: /* glsl */`
+    varying vec2 vUv;
+    void main() {
+      vUv = uv;
+      gl_Position = vec4(position, 1.0);
+    }
+  `,
+  fragmentShader: /* glsl */`
+    precision highp float;
+    varying vec2 vUv;
+    uniform float uTime;
+    uniform vec2 uRes;
+    uniform sampler2D uPrev;
+    uniform vec4 uO1; // wave, axis, freq, phase
+    uniform float uO1Amp;
+    uniform vec4 uO2;
+    uniform float uO2Amp;
+    uniform float uOscMix;
+    uniform float uO1Hue;
+    uniform float uO2Hue;
+    uniform float uBlendMode;
+    uniform float uBgMode;
+    uniform float uBright;
+    uniform float uContrast;
+    uniform float uFbAmount;
+    uniform float uFbZoom;
+    uniform float uFbRot;
+    uniform float uFbHue;
+    uniform sampler2D uCam;
+    uniform float uCamMode;
+    uniform float uCamMix;
+    uniform float uCamBright;
+    uniform float uCamMirror;
+    uniform float uCamAspect;
+    uniform float uScreenAspect;
+    uniform float uFmOn;
+    uniform float uFmAmt;
+    uniform float uBloomActive;
+    uniform float uBloomStyle;
+    uniform float uBloomIntensity;
+
+    const float PI = 3.14159265359;
+    const float TAU = 6.28318530718;
+
+    float wave(float x, float type) {
+      if (type < 0.5) return sin(x);
+      if (type < 1.5) {
+        float p = fract(x / TAU);
+        return abs(p * 2.0 - 1.0) * 2.0 - 1.0;
+      }
+      if (type < 2.5) return sin(x) > 0.0 ? 1.0 : -1.0;
+      return fract(x / TAU) * 2.0 - 1.0;
+    }
+
+    float axisCoord(vec2 uv, float axis) {
+      vec2 c = uv - 0.5;
+      if (axis < 0.5) return uv.x;
+      if (axis < 1.5) return uv.y;
+      if (axis < 2.5) return length(c);
+      return (uv.x + uv.y) * 0.5;
+    }
+
+    // HSV -> RGB
+    vec3 hsv2rgb(vec3 c) {
+      vec4 K = vec4(1.0, 2.0/3.0, 1.0/3.0, 3.0);
+      vec3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+      return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+    }
+
+    vec3 hueShift(vec3 col, float h) {
+      const vec3 k = vec3(0.57735, 0.57735, 0.57735);
+      float cosA = cos(h * TAU);
+      return col * cosA + cross(k, col) * sin(h * TAU) + k * dot(k, col) * (1.0 - cosA);
+    }
+
+    // Sample camera with cover aspect (crop, never letterbox)
+    vec3 sampleCamera(vec2 uv) {
+      vec2 cuv = uv;
+      // Cover-fit: scale so the camera fills the screen, cropping the longer side
+      float screenA = uScreenAspect;
+      float camA = uCamAspect;
+      if (camA > screenA) {
+        // Camera wider than screen: crop horizontally
+        float scale = screenA / camA;
+        cuv.x = (cuv.x - 0.5) * scale + 0.5;
+      } else {
+        // Camera taller than screen: crop vertically
+        float scale = camA / screenA;
+        cuv.y = (cuv.y - 0.5) * scale + 0.5;
+      }
+      // Mirror horizontally if requested
+      if (uCamMirror > 0.5) cuv.x = 1.0 - cuv.x;
+      return texture2D(uCam, cuv).rgb * uCamBright;
+    }
+
+    void main() {
+      vec2 uv = vUv;
+
+      // Compute Osc2 first so it can modulate Osc1 (FM/PM)
+      float c2 = axisCoord(uv, uO2.y);
+      float o2raw = wave(c2 * uO2.z * TAU + uO2.w, uO2.x);
+      float o2 = o2raw * uO2Amp;
+      o2 = o2 * 0.5 + 0.5;
+
+      // Osc1 with optional phase modulation from Osc2
+      float c1 = axisCoord(uv, uO1.y);
+      float fmPhase = uFmOn > 0.5 ? o2raw * uFmAmt * TAU : 0.0;
+      float o1 = wave(c1 * uO1.z * TAU + uO1.w + fmPhase, uO1.x) * uO1Amp;
+      o1 = o1 * 0.5 + 0.5;
+
+      // Apply contrast/brightness per oscillator
+      o1 = clamp(((o1 - 0.5) * uContrast + 0.5) * uBright, 0.0, 1.0);
+      o2 = clamp(((o2 - 0.5) * uContrast + 0.5) * uBright, 0.0, 1.0);
+
+      // Each oscillator carries its own hue
+      vec3 col1 = hsv2rgb(vec3(uO1Hue, 1.0, 1.0)) * o1;
+      vec3 col2 = hsv2rgb(vec3(uO2Hue, 1.0, 1.0)) * o2;
+
+      // Mix between separate-oscillators and ring-mod (multiplied)
+      vec3 ringMod = col1 * col2 * 2.0;
+
+      // Background
+      vec3 bg;
+      if (uBgMode < 0.5) bg = vec3(1.0);
+      else if (uBgMode < 1.5) bg = vec3(0.0);
+      else bg = vec3(0.0, 0.694, 0.251);
+
+      // Camera replaces or mixes with background in BG (1) or Both (3) mode
+      if (uCamMode > 0.5 && (uCamMode < 1.5 || uCamMode > 2.5)) {
+        vec3 camCol = sampleCamera(uv);
+        bg = mix(bg, camCol, uCamMix);
+      }
+
+      // Blend the two colored oscillators
+      vec3 combined;
+      if (uBlendMode < 0.5) {
+        // Add
+        combined = col1 + col2;
+      } else if (uBlendMode < 1.5) {
+        // Subtract: start white, subtract each color (CMY-style)
+        combined = vec3(1.0) - ((vec3(1.0) - col1) + (vec3(1.0) - col2));
+      } else if (uBlendMode < 2.5) {
+        // Screen
+        combined = vec3(1.0) - (vec3(1.0) - col1) * (vec3(1.0) - col2);
+      } else {
+        // Multiply
+        combined = col1 * col2 * 2.0;
+      }
+
+      // Apply oscMix to blend toward ring-mod
+      combined = mix(combined, ringMod, uOscMix);
+      combined = clamp(combined, 0.0, 1.0);
+
+      // Composite over background. For white BG, invert so colors darken the white.
+      vec3 col;
+      if (uBgMode < 0.5) {
+        // White bg: combined acts as "ink" — subtract from white
+        col = bg - combined;
+      } else if (uBgMode < 1.5) {
+        // Black bg: combined is the light source — add to black
+        col = bg + combined;
+      } else {
+        // Green bg: mix combined over green where it has presence
+        float lum = max(max(combined.r, combined.g), combined.b);
+        col = mix(bg, combined, lum);
+      }
+      col = clamp(col, 0.0, 1.0);
+
+      // Feedback (with optional bloom)
+      float fbAmt = uFbAmount;
+      float fbExtraBright = 0.0;
+      vec3 fbColTint = vec3(1.0);
+      float bloomBoost = uBloomActive * uBloomIntensity;
+      if (bloomBoost > 0.001) {
+        if (uBloomStyle < 0.5) {
+          // WHITE: push feedback past unity and add white injection
+          fbAmt = min(0.999, fbAmt + bloomBoost * 0.4);
+          fbExtraBright = bloomBoost * 1.2;
+        } else if (uBloomStyle < 1.5) {
+          // COLOR: feedback gain + hue rotation + saturation pump
+          fbAmt = min(0.999, fbAmt + bloomBoost * 0.35);
+          fbColTint = hsv2rgb(vec3(fract(uTime * 0.5), 1.0, 1.0));
+          fbColTint = mix(vec3(1.0), fbColTint * 1.6, bloomBoost);
+          fbExtraBright = bloomBoost * 0.3;
+        } else {
+          // GEOM: amplify pattern structure without blowing out
+          fbAmt = min(0.999, fbAmt + bloomBoost * 0.5);
+          fbColTint = vec3(1.0 + bloomBoost * 0.6);
+        }
+      }
+      if (fbAmt > 0.001) {
+        vec2 fbUv = uv - 0.5;
+        float cs = cos(uFbRot), sn = sin(uFbRot);
+        fbUv = mat2(cs, -sn, sn, cs) * fbUv;
+        fbUv /= uFbZoom;
+        fbUv += 0.5;
+        if (fbUv.x >= 0.0 && fbUv.x <= 1.0 && fbUv.y >= 0.0 && fbUv.y <= 1.0) {
+          vec3 prev = texture2D(uPrev, fbUv).rgb;
+          if (abs(uFbHue) > 0.001) prev = hueShift(prev, uFbHue);
+          prev *= fbColTint;
+          col = mix(col, prev, fbAmt);
+        }
+      }
+      if (fbExtraBright > 0.001) col += vec3(fbExtraBright);
+      col = clamp(col, 0.0, 1.0);
+
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `
+});
+const patternQuad = new THREE.Mesh(new THREE.PlaneGeometry(2, 2), patternMat);
+patternScene.add(patternQuad);
+
+// Scene 2: Rutt/Etra displaced mesh, viewing the pattern texture
+const ruttScene = new THREE.Scene();
+const ruttCamera = new THREE.PerspectiveCamera(45, w / h, 0.1, 100);
+ruttCamera.position.set(0, 0, 2.4);
+ruttCamera.lookAt(0, 0, 0);
+
+// Two meshes sharing the same geometry: one solid, one wireframe
+const MESH_RES = 160; // density of subdivision
+const ruttGeo = new THREE.PlaneGeometry(2, 2, MESH_RES, MESH_RES);
+
+const ruttUniforms = {
+  uMap: { value: null },
+  uDisp: { value: 0.6 },
+  uTilt: { value: 0.45 },
+  uRotZ: { value: 0 },
+  uZoom: { value: 1.2 },
+  uBgMode: { value: 1 },
+  uCam: { value: null },
+  uCamMode: { value: 0 },
+  uCamMix: { value: 0.7 },
+  uCamBright: { value: 1 },
+  uCamMirror: { value: 0 },
+  uCamAspect: { value: 1 },
+  uScreenAspect: { value: 1 }
+};
+
+const ruttVertexShader = /* glsl */`
+  varying vec2 vUv;
+  varying float vLum;
+  uniform sampler2D uMap;
+  uniform sampler2D uCam;
+  uniform float uCamMode;
+  uniform float uCamMix;
+  uniform float uCamBright;
+  uniform float uCamMirror;
+  uniform float uCamAspect;
+  uniform float uScreenAspect;
+  uniform float uDisp;
+  uniform float uTilt;
+  uniform float uRotZ;
+  uniform float uZoom;
+
+  vec3 sampleCameraV(vec2 uv) {
+    vec2 cuv = uv;
+    float screenA = uScreenAspect;
+    float camA = uCamAspect;
+    if (camA > screenA) {
+      float scale = screenA / camA;
+      cuv.x = (cuv.x - 0.5) * scale + 0.5;
+    } else {
+      float scale = camA / screenA;
+      cuv.y = (cuv.y - 0.5) * scale + 0.5;
+    }
+    if (uCamMirror > 0.5) cuv.x = 1.0 - cuv.x;
+    return texture2D(uCam, cuv).rgb * uCamBright;
+  }
+
+  void main() {
+    vUv = uv;
+    vec3 p = position * uZoom;
+
+    // Base displacement from the oscillator pattern
+    vec3 samp = texture2D(uMap, uv).rgb;
+    float lum = dot(samp, vec3(0.299, 0.587, 0.114));
+
+    // If camera is in Disp (2) or Both (3) mode, mix camera luminance into displacement
+    if (uCamMode > 1.5) {
+      vec3 camSamp = sampleCameraV(uv);
+      float camLum = dot(camSamp, vec3(0.299, 0.587, 0.114));
+      lum = mix(lum, camLum, uCamMix);
+    }
+
+    vLum = lum;
+    p.z += (lum - 0.5) * uDisp * 2.0;
+
+    // tilt around X
+    float ct = cos(uTilt), st = sin(uTilt);
+    p = vec3(p.x, p.y * ct - p.z * st, p.y * st + p.z * ct);
+    // rotate around Z
+    float cz = cos(uRotZ), sz = sin(uRotZ);
+    p.xy = mat2(cz, -sz, sz, cz) * p.xy;
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(p, 1.0);
+  }
+`;
+
+const ruttSolidMat = new THREE.ShaderMaterial({
+  uniforms: ruttUniforms,
+  vertexShader: ruttVertexShader,
+  fragmentShader: /* glsl */`
+    precision highp float;
+    varying vec2 vUv;
+    varying float vLum;
+    uniform sampler2D uMap;
+    void main() {
+      vec3 col = texture2D(uMap, vUv).rgb;
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+  side: THREE.DoubleSide
+});
+
+const ruttWireMat = new THREE.ShaderMaterial({
+  uniforms: ruttUniforms,
+  vertexShader: ruttVertexShader,
+  fragmentShader: /* glsl */`
+    precision highp float;
+    varying vec2 vUv;
+    varying float vLum;
+    uniform sampler2D uMap;
+    void main() {
+      vec3 col = texture2D(uMap, vUv).rgb;
+      gl_FragColor = vec4(col, 1.0);
+    }
+  `,
+  wireframe: true,
+  side: THREE.DoubleSide
+});
+
+const ruttSolidMesh = new THREE.Mesh(ruttGeo, ruttSolidMat);
+const ruttWireMesh = new THREE.Mesh(ruttGeo, ruttWireMat);
+ruttScene.add(ruttSolidMesh);
+ruttScene.add(ruttWireMesh);
+ruttSolidMesh.visible = false;
+ruttWireMesh.visible = true;
+
+// "Off" mode: just show the flat pattern fullscreen
+const flatScene = new THREE.Scene();
+const flatCam = new THREE.OrthographicCamera(-1, 1, 1, -1, 0, 1);
+const flatMat = new THREE.ShaderMaterial({
+  uniforms: { uMap: { value: null } },
+  vertexShader: `varying vec2 vUv; void main() { vUv = uv; gl_Position = vec4(position, 1.0); }`,
+  fragmentShader: `precision highp float; varying vec2 vUv; uniform sampler2D uMap;
+    void main() { gl_FragColor = vec4(texture2D(uMap, vUv).rgb, 1.0); }`
+});
+flatScene.add(new THREE.Mesh(new THREE.PlaneGeometry(2, 2), flatMat));
+
+// ---------- LFO helpers ----------
+let shTime = [0, 0];
+let shVal = [0, 0];
+function lfo(t, rate, wave, idx) {
+  const phase = t * rate;
+  if (wave < 0.5) return Math.sin(phase * 2 * Math.PI);
+  if (wave < 1.5) { // triangle
+    const p = (phase) % 1;
+    return Math.abs(p * 2 - 1) * 2 - 1;
+  }
+  if (wave < 2.5) return Math.sin(phase * 2 * Math.PI) > 0 ? 1 : -1;
+  // sample & hold
+  const period = 1 / Math.max(rate, 0.001);
+  if (t - shTime[idx] > period) {
+    shTime[idx] = t;
+    shVal[idx] = Math.random() * 2 - 1;
+  }
+  return shVal[idx];
+}
+
+// ---------- Camera ----------
+let videoEl = null;
+let videoTexture = null;
+let camStream = null;
+let camActive = false;
+
+async function startCamera(facing) {
+  // Stop existing stream
+  if (camStream) {
+    camStream.getTracks().forEach(t => t.stop());
+    camStream = null;
+  }
+  try {
+    let constraints;
+    if (state.camDeviceId) {
+      // Explicit device selected (USB webcam, capture card, etc.)
+      constraints = {
+        video: {
+          deviceId: { exact: state.camDeviceId },
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      };
+    } else {
+      // Fall back to facing mode (natural on phones)
+      constraints = {
+        video: {
+          facingMode: facing === 1 ? 'user' : 'environment',
+          width: { ideal: 1280 },
+          height: { ideal: 720 }
+        },
+        audio: false
+      };
+    }
+    camStream = await navigator.mediaDevices.getUserMedia(constraints);
+    if (!videoEl) {
+      videoEl = document.createElement('video');
+      videoEl.setAttribute('playsinline', '');
+      videoEl.setAttribute('muted', '');
+      videoEl.muted = true;
+      videoEl.style.display = 'none';
+      document.body.appendChild(videoEl);
+    }
+    videoEl.srcObject = camStream;
+    await videoEl.play();
+    videoTexture = new THREE.VideoTexture(videoEl);
+    videoTexture.minFilter = THREE.LinearFilter;
+    videoTexture.magFilter = THREE.LinearFilter;
+    videoTexture.format = THREE.RGBAFormat;
+    if (state.vidSrc === 0) {
+      patternMat.uniforms.uCam.value = videoTexture;
+      ruttUniforms.uCam.value = videoTexture;
+    }
+    camActive = true;
+    document.getElementById('camStart').textContent = 'Camera On';
+    document.getElementById('camStart').style.background = 'rgba(122, 201, 176, 0.3)';
+    // Now that permission is granted, device labels are available — refresh the list
+    refreshCameraDevices();
+    return true;
+  } catch (err) {
+    alert('Camera access failed: ' + err.message);
+    return false;
+  }
+}
+
+function getCamAspect() {
+  if (videoEl && videoEl.videoWidth > 0) {
+    return videoEl.videoWidth / videoEl.videoHeight;
+  }
+  return 16 / 9;
+}
+
+// Enumerate cameras and populate the device dropdown. Device labels are only
+// exposed by the browser after camera permission has been granted at least once.
+async function refreshCameraDevices() {
+  if (!navigator.mediaDevices || !navigator.mediaDevices.enumerateDevices) return;
+  try {
+    const devices = await navigator.mediaDevices.enumerateDevices();
+    const cams = devices.filter(d => d.kind === 'videoinput');
+    const sel = document.getElementById('camDevice');
+    const prev = sel.value;
+    // Rebuild options
+    sel.innerHTML = '<option value="">Default / by facing</option>';
+    cams.forEach((cam, i) => {
+      const opt = document.createElement('option');
+      opt.value = cam.deviceId;
+      // Labels are empty until permission granted; fall back to a generic name
+      opt.textContent = cam.label || ('Camera ' + (i + 1));
+      sel.appendChild(opt);
+    });
+    // Restore previous selection if still present
+    if (prev && cams.some(c => c.deviceId === prev)) sel.value = prev;
+  } catch (err) {
+    console.error('Device enumeration failed:', err);
+  }
+}
+
+document.getElementById('camDevice').addEventListener('change', async (e) => {
+  state.camDeviceId = e.target.value;
+  // If camera is already running, restart with the new device
+  if (camActive) await startCamera(state.camFacing);
+});
+
+// Re-enumerate when devices are plugged/unplugged
+if (navigator.mediaDevices) {
+  navigator.mediaDevices.addEventListener?.('devicechange', refreshCameraDevices);
+}
+
+document.getElementById('camStart').addEventListener('click', async () => {
+  if (!camActive) {
+    const ok = await startCamera(state.camFacing);
+    if (ok && state.camMode === 0) {
+      // Auto-enable BG mode on first camera start
+      state.camMode = 1;
+      document.querySelectorAll('[data-param="camMode"] button').forEach(b => {
+        b.classList.toggle('active', parseInt(b.dataset.val) === 1);
+      });
+    }
+  } else {
+    // Toggle off
+    if (camStream) camStream.getTracks().forEach(t => t.stop());
+    camStream = null;
+    camActive = false;
+    document.getElementById('camStart').textContent = 'Enable Camera';
+    document.getElementById('camStart').style.background = 'rgba(122, 201, 176, 0.15)';
+  }
+});
+
+// Mirror toggle: cycle Auto -> On -> Off -> Auto
+document.getElementById('camMirror').addEventListener('click', () => {
+  const btn = document.getElementById('camMirror');
+  if (state.camMirror === -1) { state.camMirror = 1; btn.textContent = 'Mirror: On'; }
+  else if (state.camMirror === 1) { state.camMirror = 0; btn.textContent = 'Mirror: Off'; }
+  else { state.camMirror = -1; btn.textContent = 'Mirror: Auto'; }
+});
+
+// ---------- Video file source ----------
+let fileVidEl = null;
+let fileVidTexture = null;
+let fileVidLoaded = false;
+let fileVidPlaying = false;
+let fileVidLooping = false;
+
+function ensureFileVidEl() {
+  if (fileVidEl) return fileVidEl;
+  fileVidEl = document.createElement('video');
+  fileVidEl.setAttribute('playsinline', '');
+  fileVidEl.muted = true; // muted by default
+  fileVidEl.loop = false;
+  fileVidEl.style.display = 'none';
+  document.body.appendChild(fileVidEl);
+  fileVidEl.addEventListener('ended', () => {
+    if (!fileVidLooping) {
+      fileVidPlaying = false;
+      document.getElementById('vidPlay').textContent = '▶';
+    }
+  });
+  return fileVidEl;
+}
+
+function loadVideoFile(file) {
+  if (!file) return;
+  const label = document.getElementById('vidFileLabel');
+  ensureFileVidEl();
+  const url = URL.createObjectURL(file);
+  fileVidEl.src = url;
+  fileVidEl.loop = fileVidLooping;
+  fileVidEl.muted = (state.vidMuted === 1);
+  fileVidEl.onloadeddata = () => {
+    fileVidTexture = new THREE.VideoTexture(fileVidEl);
+    fileVidTexture.minFilter = THREE.LinearFilter;
+    fileVidTexture.magFilter = THREE.LinearFilter;
+    fileVidTexture.format = THREE.RGBAFormat;
+    fileVidLoaded = true;
+    document.getElementById('vidPlay').disabled = false;
+    document.getElementById('vidPlay').style.color = '#7ac9b0';
+    document.getElementById('vidPlay').style.borderColor = 'rgba(122, 201, 176, 0.4)';
+    document.getElementById('vidPos').disabled = false;
+    label.textContent = file.name.length > 16 ? file.name.slice(0, 14) + '...' : file.name;
+    // If video source is active, bind this texture now
+    if (state.vidSrc === 1) bindVideoSourceTexture();
+  };
+  fileVidEl.onerror = () => {
+    label.textContent = 'Load failed';
+    alert('Could not load video. Try MP4 (H.264) for best compatibility.');
+  };
+}
+
+function bindVideoSourceTexture() {
+  // Bind whichever texture matches the active source to the shader uniforms
+  let tex = null;
+  if (state.vidSrc === 0) tex = videoTexture;       // camera
+  else tex = fileVidTexture;                          // video file
+  if (tex) {
+    patternMat.uniforms.uCam.value = tex;
+    ruttUniforms.uCam.value = tex;
+  }
+}
+
+function getActiveVideoAspect() {
+  if (state.vidSrc === 1) {
+    if (fileVidEl && fileVidEl.videoWidth > 0) return fileVidEl.videoWidth / fileVidEl.videoHeight;
+    return 16 / 9;
+  }
+  return getCamAspect();
+}
+
+document.getElementById('vidFile').addEventListener('change', (e) => {
+  loadVideoFile(e.target.files[0]);
+});
+
+document.getElementById('vidPlay').addEventListener('click', async () => {
+  if (!fileVidLoaded) return;
+  if (fileVidPlaying) {
+    fileVidEl.pause();
+    fileVidPlaying = false;
+    document.getElementById('vidPlay').textContent = '▶';
+  } else {
+    try {
+      await fileVidEl.play();
+      fileVidPlaying = true;
+      document.getElementById('vidPlay').textContent = '■';
+      // Auto-enable a visible mode if currently Off
+      if (state.camMode === 0) {
+        state.camMode = 1;
+        document.querySelectorAll('[data-param="camMode"] button').forEach(b => {
+          b.classList.toggle('active', parseInt(b.dataset.val) === 1);
+        });
+      }
+    } catch (err) {
+      alert('Video play failed: ' + err.message);
+    }
+  }
+});
+
+document.getElementById('vidLoop').addEventListener('click', () => {
+  fileVidLooping = !fileVidLooping;
+  if (fileVidEl) fileVidEl.loop = fileVidLooping;
+  const btn = document.getElementById('vidLoop');
+  btn.style.background = fileVidLooping ? 'rgba(122, 201, 176, 0.2)' : 'rgba(255,255,255,0.04)';
+  btn.style.color = fileVidLooping ? '#7ac9b0' : '#aaa';
+});
+
+const vidPosSlider = document.getElementById('vidPos');
+let vidScrubbing = false;
+vidPosSlider.addEventListener('input', (e) => {
+  if (fileVidEl && fileVidEl.duration) {
+    vidScrubbing = true;
+    fileVidEl.currentTime = parseFloat(e.target.value) * fileVidEl.duration;
+  }
+});
+vidPosSlider.addEventListener('change', () => { vidScrubbing = false; });
+
+document.getElementById('vidMute').addEventListener('click', () => {
+  state.vidMuted = state.vidMuted === 1 ? 0 : 1;
+  if (fileVidEl) fileVidEl.muted = (state.vidMuted === 1);
+  const btn = document.getElementById('vidMute');
+  btn.textContent = state.vidMuted === 1 ? 'Audio: Muted' : 'Audio: On';
+  btn.style.background = state.vidMuted === 1 ? 'rgba(255,255,255,0.04)' : 'rgba(122, 201, 176, 0.2)';
+  btn.style.color = state.vidMuted === 1 ? '#aaa' : '#7ac9b0';
+});
+
+// Source toggle: Camera vs Video file
+function setVideoSource(mode) {
+  state.vidSrc = mode;
+  document.getElementById('camCtrls').style.display = mode === 0 ? '' : 'none';
+  document.getElementById('vidCtrls').style.display = mode === 1 ? '' : 'none';
+  if (mode === 0) {
+    // Switching to camera: pause the video file
+    if (fileVidPlaying) {
+      fileVidEl.pause();
+      fileVidPlaying = false;
+      document.getElementById('vidPlay').textContent = '▶';
+    }
+  }
+  bindVideoSourceTexture();
+}
+
+function fmtVidTime(s) {
+  if (!isFinite(s)) return '0:00';
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return m + ':' + (sec < 10 ? '0' : '') + sec;
+}
+
+function updateVideoFile() {
+  if (state.vidSrc === 1 && fileVidEl && fileVidEl.duration && !vidScrubbing) {
+    vidPosSlider.value = fileVidEl.currentTime / fileVidEl.duration;
+    document.getElementById('vidPosV').textContent = fmtVidTime(fileVidEl.currentTime);
+  }
+}
+
+
+// ---------- Audio reactivity ----------
+let audioCtx = null;
+let audioBuffer = null;        // decoded PCM
+let audioBufferSource = null;  // current playing source (recreated on each play)
+let analyser = null;
+let audioGain = null;
+let freqData = null;
+let bassLvl = 0, midLvl = 0, trebLvl = 0;
+let audioLoaded = false;
+let audioPlaying = false;
+let audioLooping = false;
+let audioStartCtxTime = 0;     // AudioContext.currentTime when playback started
+let audioPauseOffset = 0;      // seconds into the buffer where we paused
+let audioDuration = 0;
+let audioRAFLast = 0;
+// Mic
+let micStream = null;
+let micSourceNode = null;
+let micGainNode = null;
+let micActive = false;
+let micAnalyserConnected = false; // is the file source currently connected to analyser?
+
+function ensureAudioCtx() {
+  if (audioCtx) return audioCtx;
+  audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  analyser = audioCtx.createAnalyser();
+  analyser.fftSize = 1024;
+  analyser.smoothingTimeConstant = 0.7;
+  audioGain = audioCtx.createGain();
+  audioGain.gain.value = state.audioVol;
+  // audioGain is the speaker path. analyser is a parallel tap with NO downstream
+  // connection to destination — this is the only way to read levels without routing
+  // mic input back to the speakers.
+  audioGain.connect(audioCtx.destination);
+  freqData = new Uint8Array(analyser.frequencyBinCount);
+  return audioCtx;
+}
+
+function getAudioCurrentTime() {
+  if (!audioBuffer) return 0;
+  if (audioPlaying) {
+    let t = audioPauseOffset + (audioCtx.currentTime - audioStartCtxTime);
+    if (audioLooping) t = t % audioDuration;
+    else if (t > audioDuration) t = audioDuration;
+    return t;
+  }
+  return audioPauseOffset;
+}
+
+function startPlayback(offsetSec) {
+  if (!audioBuffer || !audioCtx) return;
+  // Stop any existing source
+  if (audioBufferSource) {
+    try { audioBufferSource.onended = null; audioBufferSource.stop(); } catch (e) {}
+    audioBufferSource.disconnect();
+    audioBufferSource = null;
+  }
+  audioBufferSource = audioCtx.createBufferSource();
+  audioBufferSource.buffer = audioBuffer;
+  audioBufferSource.loop = audioLooping;
+  // Split: feed both the analyser (for levels) and audioGain (for speakers)
+  audioBufferSource.connect(analyser);
+  audioBufferSource.connect(audioGain);
+  audioBufferSource.onended = () => {
+    // Only fires for non-looping completion or manual stop
+    if (!audioLooping && audioPlaying) {
+      audioPlaying = false;
+      audioPauseOffset = 0;
+      document.getElementById('audioPlay').textContent = '▶';
+    }
+  };
+  audioStartCtxTime = audioCtx.currentTime;
+  audioPauseOffset = offsetSec;
+  audioBufferSource.start(0, offsetSec);
+  audioPlaying = true;
+}
+
+function stopPlayback(savePosition) {
+  if (audioBufferSource) {
+    if (savePosition) audioPauseOffset = getAudioCurrentTime();
+    try { audioBufferSource.onended = null; audioBufferSource.stop(); } catch (e) {}
+    audioBufferSource.disconnect();
+    audioBufferSource = null;
+  }
+  audioPlaying = false;
+}
+
+async function loadAudioFile(file) {
+  if (!file) return;
+  const label = document.getElementById('audioFileLabel');
+  label.textContent = 'Decoding...';
+  try {
+    ensureAudioCtx();
+    // Stop anything currently playing from a prior file
+    stopPlayback(false);
+    audioPauseOffset = 0;
+    const arrayBuf = await file.arrayBuffer();
+    // Use the promise form on browsers that support it (modern Safari, Chrome, Firefox).
+    // Calling with callbacks in addition to using the promise return causes Safari to
+    // detach the ArrayBuffer and throw "non-finite" errors. Pick one path.
+    audioBuffer = await audioCtx.decodeAudioData(arrayBuf);
+    audioDuration = audioBuffer.duration;
+    audioLoaded = true;
+    const playBtn = document.getElementById('audioPlay');
+    playBtn.disabled = false;
+    playBtn.style.opacity = '1';
+    playBtn.style.color = '#7ac9b0';
+    playBtn.style.borderColor = 'rgba(122, 201, 176, 0.4)';
+    document.getElementById('audioPos').disabled = false;
+    label.textContent = file.name.length > 18 ? file.name.slice(0, 16) + '...' : file.name;
+    // If user is currently in file mode, ensure the source toggle is on File
+    if (state.audioSrc !== 0) setAudioSource(0);
+  } catch (err) {
+    console.error('Decode failed:', err);
+    label.textContent = 'Decode failed';
+    alert('Could not decode audio file: ' + (err.message || err));
+  }
+}
+
+// File picker (existing input)
+document.getElementById('audioFile').addEventListener('change', (e) => {
+  loadAudioFile(e.target.files[0]);
+});
+
+// Drag-and-drop anywhere on the window — avoids the focus-loss / fullscreen-exit
+// problem that the OS file picker causes.
+const dropOverlay = document.getElementById('dropOverlay');
+let dragDepth = 0; // count nested dragenter/leave events to avoid flicker
+function isAudioDrag(e) {
+  if (!e.dataTransfer) return false;
+  // Some browsers don't populate types until drop. Be lenient: any file drag qualifies.
+  const types = Array.from(e.dataTransfer.types || []);
+  return types.includes('Files') || types.includes('application/x-moz-file');
+}
+window.addEventListener('dragenter', (e) => {
+  if (!isAudioDrag(e)) return;
+  e.preventDefault();
+  dragDepth++;
+  dropOverlay.classList.add('active');
+});
+window.addEventListener('dragover', (e) => {
+  if (!isAudioDrag(e)) return;
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'copy';
+});
+window.addEventListener('dragleave', (e) => {
+  if (!isAudioDrag(e)) return;
+  dragDepth = Math.max(0, dragDepth - 1);
+  if (dragDepth === 0) dropOverlay.classList.remove('active');
+});
+window.addEventListener('drop', (e) => {
+  if (!isAudioDrag(e)) return;
+  e.preventDefault();
+  dragDepth = 0;
+  dropOverlay.classList.remove('active');
+  const files = e.dataTransfer.files;
+  if (!files || files.length === 0) return;
+  const arr = Array.from(files);
+  // Route by type: audio → audio loader, video → video loader. Kept separate.
+  const audioFile = arr.find(f =>
+    f.type.startsWith('audio/') || /\.(mp3|wav|m4a|aac|ogg|flac|opus)$/i.test(f.name)
+  );
+  const videoFile = arr.find(f =>
+    f.type.startsWith('video/') || /\.(mp4|webm|mov|m4v|ogv)$/i.test(f.name)
+  );
+  if (videoFile) {
+    loadVideoFile(videoFile);
+    // Switch the video panel to Video source so it's immediately usable
+    if (state.vidSrc !== 1) {
+      setVideoSource(1);
+      document.querySelectorAll('[data-param="vidSrc"] button').forEach(b => {
+        b.classList.toggle('active', parseInt(b.dataset.val) === 1);
+      });
+    }
+  } else if (audioFile) {
+    loadAudioFile(audioFile);
+  } else {
+    dropOverlay.textContent = 'Not an audio or video file';
+    dropOverlay.classList.add('active');
+    setTimeout(() => {
+      dropOverlay.classList.remove('active');
+      dropOverlay.textContent = 'Drop audio file to load';
+    }, 1500);
+  }
+});
+
+document.getElementById('audioPlay').addEventListener('click', async () => {
+  if (!audioLoaded) return;
+  ensureAudioCtx();
+  if (audioCtx.state === 'suspended') {
+    try { await audioCtx.resume(); } catch (err) { console.error('Resume failed:', err); }
+  }
+  if (audioPlaying) {
+    stopPlayback(true);
+    document.getElementById('audioPlay').textContent = '▶';
+  } else {
+    let start = audioPauseOffset;
+    if (start >= audioDuration - 0.05) start = 0; // wrap if at end
+    startPlayback(start);
+    document.getElementById('audioPlay').textContent = '■';
+  }
+});
+
+document.getElementById('audioLoop').addEventListener('click', () => {
+  audioLooping = !audioLooping;
+  if (audioBufferSource) audioBufferSource.loop = audioLooping;
+  const btn = document.getElementById('audioLoop');
+  btn.style.background = audioLooping ? 'rgba(122, 201, 176, 0.2)' : 'rgba(255,255,255,0.04)';
+  btn.style.color = audioLooping ? '#7ac9b0' : '#aaa';
+});
+
+// Scrubbing: pause graph briefly, restart from new offset
+let audioScrubbing = false;
+const audioPosSlider = document.getElementById('audioPos');
+audioPosSlider.addEventListener('input', (e) => {
+  if (!audioLoaded) return;
+  audioScrubbing = true;
+  audioPauseOffset = parseFloat(e.target.value) * audioDuration;
+});
+audioPosSlider.addEventListener('change', () => {
+  if (!audioLoaded) return;
+  audioScrubbing = false;
+  if (audioPlaying) startPlayback(audioPauseOffset);
+});
+
+document.getElementById('audioVol').addEventListener('input', (e) => {
+  state.audioVol = parseFloat(e.target.value);
+  if (audioGain) audioGain.gain.value = state.audioVol;
+});
+
+// ---- Mic input ----
+async function enableMic() {
+  if (micActive) return true;
+  try {
+    ensureAudioCtx();
+    if (audioCtx.state === 'suspended') await audioCtx.resume();
+    micStream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: false,
+        noiseSuppression: false,
+        autoGainControl: false
+      },
+      video: false
+    });
+    micSourceNode = audioCtx.createMediaStreamSource(micStream);
+    micGainNode = audioCtx.createGain();
+    micGainNode.gain.value = state.micGain;
+    micSourceNode.connect(micGainNode);
+    // Connect mic chain to analyser only (NOT to destination — no feedback)
+    micGainNode.connect(analyser);
+    micActive = true;
+    const btn = document.getElementById('micStart');
+    btn.textContent = 'Mic On';
+    btn.style.background = 'rgba(122, 201, 176, 0.3)';
+    return true;
+  } catch (err) {
+    console.error('Mic enable failed:', err);
+    alert('Mic access failed: ' + err.message);
+    return false;
+  }
+}
+
+function disableMic() {
+  if (!micActive) return;
+  try {
+    if (micGainNode) micGainNode.disconnect();
+    if (micSourceNode) micSourceNode.disconnect();
+  } catch (e) {}
+  if (micStream) micStream.getTracks().forEach(t => t.stop());
+  micStream = null;
+  micSourceNode = null;
+  micGainNode = null;
+  micActive = false;
+  bassLvl = 0; midLvl = 0; trebLvl = 0;
+  const btn = document.getElementById('micStart');
+  btn.textContent = 'Enable Mic';
+  btn.style.background = 'rgba(122, 201, 176, 0.15)';
+}
+
+document.getElementById('micStart').addEventListener('click', () => {
+  if (micActive) disableMic();
+  else enableMic();
+});
+
+document.getElementById('micGain').addEventListener('input', (e) => {
+  state.micGain = parseFloat(e.target.value);
+  if (micGainNode) micGainNode.gain.value = state.micGain;
+});
+
+// ---- Source toggle: File vs Mic ----
+function setAudioSource(mode) {
+  state.audioSrc = mode;
+  document.getElementById('audioFileControls').style.display = mode === 0 ? '' : 'none';
+  document.getElementById('audioMicControls').style.display = mode === 1 ? '' : 'none';
+  if (mode === 1) {
+    // Switching to mic: pause any playing file
+    if (audioPlaying) {
+      stopPlayback(true);
+      document.getElementById('audioPlay').textContent = '▶';
+    }
+  } else {
+    // Switching to file: disable mic
+    disableMic();
+  }
+}
+
+function fmtTime(s) {
+  if (!isFinite(s)) return '0:00';
+  const m = Math.floor(s / 60);
+  const sec = Math.floor(s % 60);
+  return m + ':' + (sec < 10 ? '0' : '') + sec;
+}
+
+function updateAudio() {
+  // Active if file is playing OR mic is on
+  const isActive = audioPlaying || micActive;
+  if (!analyser || !isActive) {
+    bassLvl *= 0.9; midLvl *= 0.9; trebLvl *= 0.9;
+    return;
+  }
+  analyser.smoothingTimeConstant = state.audioSmooth;
+  analyser.getByteFrequencyData(freqData);
+  const nyquist = audioCtx.sampleRate / 2;
+  const binHz = nyquist / freqData.length;
+  const bassEnd = Math.floor(250 / binHz);
+  const midEnd = Math.floor(2000 / binHz);
+  let bSum = 0, mSum = 0, tSum = 0;
+  let bN = 0, mN = 0, tN = 0;
+  for (let i = 1; i < freqData.length; i++) {
+    if (i < bassEnd) { bSum += freqData[i]; bN++; }
+    else if (i < midEnd) { mSum += freqData[i]; mN++; }
+    else { tSum += freqData[i]; tN++; }
+  }
+  bassLvl = bN ? (bSum / bN) / 255 : 0;
+  midLvl = mN ? (mSum / mN) / 255 : 0;
+  trebLvl = tN ? (tSum / tN) / 255 : 0;
+
+  if (state.audioSrc === 0 && audioDuration > 0 && !audioScrubbing) {
+    const ct = getAudioCurrentTime();
+    audioPosSlider.value = ct / audioDuration;
+    document.getElementById('audioPosV').textContent = fmtTime(ct);
+  }
+}
+
+
+
+// Shared rate-shaping: maps the linear rate slider (0.01-5) to a perceptually
+// logarithmic Hz value, so slow rates get most of the slider travel.
+function shapeRateHz(r) {
+  const minR = 0.01, maxR = 5;
+  if (r <= minR) return 0;
+  const tNorm = (r - minR) / (maxR - minR);
+  return minR * Math.pow(maxR / minR, tNorm);
+}
+
+function bindSlider(id) {
+  const el = document.getElementById(id);
+  const valEl = document.getElementById(id + 'V');
+  const isRate = (id === 'lfo1Rate' || id === 'lfo2Rate');
+  const update = () => {
+    const v = parseFloat(el.value);
+    state[id] = v;
+    if (isRate) {
+      // Show the actual Hz the log curve produces, not the raw slider position
+      const hz = shapeRateHz(v);
+      valEl.textContent = hz === 0 ? 'off' : (hz < 0.1 ? hz.toFixed(3) : hz.toFixed(2));
+    } else {
+      valEl.textContent = v.toFixed(Math.abs(v) >= 10 ? 1 : 2);
+    }
+  };
+  el.addEventListener('input', update);
+  update();
+}
+['osc1Freq','osc1Phase','osc1Amp','osc1Hue','osc1Drift','osc2Freq','osc2Phase','osc2Amp','osc2Hue','osc2Drift',
+ 'lfo1Rate','lfo1Depth','lfo2Rate','lfo2Depth',
+ 'ruttDisp','ruttTilt','ruttRot','ruttZoom',
+ 'fbAmount','fbZoom','fbRot','fbHue',
+ 'oscMix','bright','contrast',
+ 'camMix','camBright','fmAmt','fmMod',
+ 'audioSmooth','bassAmt','midAmt','trebAmt','micGain',
+ 'bloomIntensity'].forEach(bindSlider);
+
+// ROYGBIV preset buttons set the matching hue slider
+document.querySelectorAll('.seg.roygbiv').forEach(seg => {
+  const target = seg.dataset.target;
+  seg.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const v = parseFloat(btn.dataset.val);
+      const slider = document.getElementById(target);
+      slider.value = v;
+      slider.dispatchEvent(new Event('input'));
+    });
+  });
+});
+
+document.querySelectorAll('.seg').forEach(seg => {
+  const param = seg.dataset.param;
+  if (!param) return; // skip roygbiv (uses data-target)
+  seg.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      seg.querySelectorAll('button').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      state[param] = parseInt(btn.dataset.val, 10);
+      if (param === 'ruttMode') updateRuttMode();
+      if (param === 'camFacing' && camActive) {
+        await startCamera(state.camFacing);
+      }
+      if (param === 'audioSrc') setAudioSource(state.audioSrc);
+      if (param === 'vidSrc') setVideoSource(state.vidSrc);
+    });
+  });
+});
+
+function updateRuttMode() {
+  ruttWireMesh.visible = state.ruttMode === 0;
+  ruttSolidMesh.visible = state.ruttMode === 1;
+}
+
+// Collapse / expand panel
+const ui = document.getElementById('ui');
+const toggleBar = document.getElementById('toggle-bar');
+toggleBar.addEventListener('click', () => ui.classList.toggle('hidden'));
+
+// Bloom: momentary trigger with smooth attack/release for analog-feel
+let bloomTarget = 0;     // 1 while pressed, 0 when released
+let bloomActive = 0;     // smoothly follows bloomTarget
+const bloomBtn = document.getElementById('bloomBtn');
+function bloomDown(e) {
+  e.preventDefault();
+  bloomTarget = 1;
+  bloomBtn.style.background = 'rgba(201, 122, 201, 0.5)';
+  bloomBtn.style.color = '#fff';
+  bloomBtn.style.boxShadow = '0 0 20px rgba(201, 122, 201, 0.6)';
+}
+function bloomUp(e) {
+  if (e) e.preventDefault();
+  bloomTarget = 0;
+  bloomBtn.style.background = 'rgba(201, 122, 201, 0.15)';
+  bloomBtn.style.color = '#c97ac9';
+  bloomBtn.style.boxShadow = 'none';
+}
+bloomBtn.addEventListener('mousedown', bloomDown);
+bloomBtn.addEventListener('touchstart', bloomDown, { passive: false });
+bloomBtn.addEventListener('mouseup', bloomUp);
+bloomBtn.addEventListener('mouseleave', bloomUp);
+bloomBtn.addEventListener('touchend', bloomUp);
+bloomBtn.addEventListener('touchcancel', bloomUp);
+// Keyboard: space bar bloom for desktop performance
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space' && !e.repeat && document.activeElement.tagName !== 'INPUT') {
+    e.preventDefault();
+    bloomDown({ preventDefault: () => {} });
+  }
+});
+window.addEventListener('keyup', (e) => {
+  if (e.code === 'Space') bloomUp(null);
+});
+
+// Hide UI button (full clean view)
+const hideBtn = document.getElementById('hideUI');
+let uiHiddenFully = false;
+hideBtn.addEventListener('click', () => {
+  uiHiddenFully = !uiHiddenFully;
+  ui.style.display = uiHiddenFully ? 'none' : '';
+  hideBtn.classList.toggle('dim', uiHiddenFully);
+});
+
+// Resize
+window.addEventListener('resize', () => {
+  const s = getSize(); w = s.w; h = s.h;
+  renderer.setSize(w, h, false);
+  ruttCamera.aspect = w / h;
+  ruttCamera.updateProjectionMatrix();
+  rtA.dispose(); rtB.dispose();
+  rtA = makeRT(); rtB = makeRT();
+});
+
+// ---------- MIDI ----------
+let midiAccess = null;
+let midiLearning = false;       // is "MIDI Learn" mode on?
+let midiArmedTarget = null;     // {kind: 'slider'|'seg'|'button', id, ...}
+let midiMappings = {};          // key: "type-status-cc/note" → target descriptor
+// Pickup state per slider id: tracks whether incoming MIDI has "caught up" to current value
+let midiPickup = {};            // {sliderId: {captured: bool, lastMidi: number}}
+let bloomAutoReleaseTimer = null; // Used by MIDI to auto-release bloom for toggle-mode pads
+const MIDI_STORAGE_KEY = 'analogVideoSynth.midiMappings.v1';
+
+// Catalogue of bindable targets (sliders, segment groups, the bloom button)
+function getBindableTargets() {
+  const targets = [];
+  // Sliders: any <input type="range"> with an id
+  document.querySelectorAll('input[type="range"]').forEach(el => {
+    targets.push({ kind: 'slider', id: el.id, el });
+  });
+  // Segment groups (data-param)
+  document.querySelectorAll('.seg[data-param]').forEach(seg => {
+    targets.push({ kind: 'seg', id: seg.dataset.param, el: seg });
+  });
+  // Bloom button
+  targets.push({ kind: 'bloom', id: 'bloomBtn', el: document.getElementById('bloomBtn') });
+  return targets;
+}
+
+function loadMidiMappings() {
+  try {
+    const raw = localStorage.getItem(MIDI_STORAGE_KEY);
+    if (raw) midiMappings = JSON.parse(raw);
+  } catch (e) { midiMappings = {}; }
+  refreshMappedHighlights();
+}
+
+function saveMidiMappings() {
+  try { localStorage.setItem(MIDI_STORAGE_KEY, JSON.stringify(midiMappings)); } catch (e) {}
+}
+
+function refreshMappedHighlights() {
+  // Clear all
+  document.querySelectorAll('.midi-mapped').forEach(el => el.classList.remove('midi-mapped'));
+  // Apply to currently-mapped target elements
+  const mappedIds = new Set();
+  for (const key in midiMappings) mappedIds.add(midiMappings[key].kind + ':' + midiMappings[key].id);
+  getBindableTargets().forEach(t => {
+    if (mappedIds.has(t.kind + ':' + t.id)) t.el.classList.add('midi-mapped');
+  });
+}
+
+function midiMessageKey(status, dataByte) {
+  // status: 0x90 (note on), 0x80 (note off), 0xB0 (CC), etc. Strip channel.
+  const type = (status & 0xf0);
+  const ch = (status & 0x0f);
+  return type + '-' + ch + '-' + dataByte;
+}
+
+function setMidiStatus(text, color) {
+  const el = document.getElementById('midiStatus');
+  el.textContent = text;
+  el.style.color = color || '#888';
+}
+
+function setMidiActivity(text) {
+  document.getElementById('midiActivity').textContent = text;
+}
+
+async function enableMidi() {
+  if (!navigator.requestMIDIAccess) {
+    setMidiStatus('MIDI not supported in this browser', '#c97a7a');
+    return;
+  }
+  try {
+    midiAccess = await navigator.requestMIDIAccess({ sysex: false });
+    bindMidiInputs();
+    midiAccess.onstatechange = () => bindMidiInputs();
+    document.getElementById('midiLearn').disabled = false;
+    document.getElementById('midiClear').disabled = false;
+    document.getElementById('midiEnable').textContent = 'Enabled';
+    document.getElementById('midiEnable').style.background = 'rgba(122, 201, 176, 0.3)';
+    loadMidiMappings();
+  } catch (err) {
+    setMidiStatus('MIDI permission denied', '#c97a7a');
+    console.error('MIDI error:', err);
+  }
+}
+
+function bindMidiInputs() {
+  if (!midiAccess) return;
+  const inputs = Array.from(midiAccess.inputs.values());
+  inputs.forEach(input => { input.onmidimessage = handleMidiMessage; });
+  if (inputs.length === 0) {
+    setMidiStatus('MIDI: No devices', '#c9a87a');
+  } else if (inputs.length === 1) {
+    setMidiStatus('MIDI: ' + (inputs[0].name || 'connected'), '#7ac9b0');
+  } else {
+    setMidiStatus('MIDI: ' + inputs.length + ' devices', '#7ac9b0');
+  }
+}
+
+function handleMidiMessage(e) {
+  const [status, d1, d2] = e.data;
+  const type = status & 0xf0;
+  // Show activity
+  if (type === 0xB0) setMidiActivity('CC ' + d1 + ' = ' + d2 + ' ch' + ((status & 0x0f) + 1));
+  else if (type === 0x90 && d2 > 0) setMidiActivity('Note On ' + d1 + ' vel ' + d2);
+  else if (type === 0x80 || (type === 0x90 && d2 === 0)) setMidiActivity('Note Off ' + d1);
+
+  const key = midiMessageKey(status, d1);
+
+  // If learning + a target is armed, bind this message to it
+  if (midiLearning && midiArmedTarget) {
+    // Note off shouldn't create a binding by itself
+    if (type === 0x80 || (type === 0x90 && d2 === 0)) return;
+    midiMappings[key] = {
+      kind: midiArmedTarget.kind,
+      id: midiArmedTarget.id,
+      type: type, // 0xB0 = CC, 0x90 = note
+      ch: status & 0x0f,
+      data1: d1
+    };
+    // If the target was also bound to a different message previously, remove the old binding
+    for (const k in midiMappings) {
+      if (k !== key && midiMappings[k].kind === midiArmedTarget.kind && midiMappings[k].id === midiArmedTarget.id) {
+        delete midiMappings[k];
+      }
+    }
+    saveMidiMappings();
+    // Disarm and clear highlight
+    midiArmedTarget.el.classList.remove('midi-armed');
+    midiArmedTarget = null;
+    refreshMappedHighlights();
+    setMidiActivity('Mapped to ' + (type === 0xB0 ? 'CC ' + d1 : 'Note ' + d1));
+    return;
+  }
+
+  // Otherwise look up the mapping and apply
+  const mapping = midiMappings[key];
+  if (!mapping) return;
+  applyMidiToTarget(mapping, type, d1, d2);
+}
+
+function applyMidiToTarget(mapping, type, d1, d2) {
+  if (mapping.kind === 'slider') {
+    const slider = document.getElementById(mapping.id);
+    if (!slider) return;
+    const min = parseFloat(slider.min);
+    const max = parseFloat(slider.max);
+    let incoming;
+    if (type === 0xB0) {
+      // CC: 0-127 normalized
+      const t = d2 / 127;
+      // Use log mapping for wide positive ranges (e.g. frequencies),
+      // which gives perceptually-even steps instead of huge jumps at the low end.
+      const useLog = min > 0 && max / min > 50;
+      if (useLog) {
+        incoming = min * Math.pow(max / min, t);
+      } else {
+        incoming = min + t * (max - min);
+      }
+    } else {
+      return;
+    }
+    // Pickup mode: ignore until incoming crosses the current value
+    const cur = parseFloat(slider.value);
+    const pick = midiPickup[mapping.id] || (midiPickup[mapping.id] = { captured: false, lastMidi: incoming });
+    if (!pick.captured) {
+      const useLog = min > 0 && max / min > 50;
+      // Compare in normalized (log or linear) space so threshold is even across range
+      const norm = (v) => useLog ? Math.log(v / min) / Math.log(max / min) : (v - min) / (max - min);
+      const curN = norm(cur);
+      const incN = norm(incoming);
+      const lastN = norm(pick.lastMidi);
+      const prevSide = lastN >= curN;
+      const newSide = incN >= curN;
+      if (Math.abs(incN - curN) < 0.02 || prevSide !== newSide) {
+        pick.captured = true;
+      }
+      pick.lastMidi = incoming;
+      if (!pick.captured) return;
+    }
+    pick.lastMidi = incoming;
+    slider.value = incoming;
+    slider.dispatchEvent(new Event('input'));
+  } else if (mapping.kind === 'seg') {
+    // Segment: advance to next value on note-on or on CC threshold cross
+    const seg = document.querySelector('.seg[data-param="' + mapping.id + '"]');
+    if (!seg) return;
+    if (type === 0x90 && d2 > 0) {
+      const buttons = Array.from(seg.querySelectorAll('button'));
+      const activeIdx = buttons.findIndex(b => b.classList.contains('active'));
+      const nextIdx = (activeIdx + 1) % buttons.length;
+      buttons[nextIdx].click();
+    } else if (type === 0xB0) {
+      // Map CC range to button index
+      const buttons = Array.from(seg.querySelectorAll('button'));
+      const idx = Math.min(buttons.length - 1, Math.floor((d2 / 128) * buttons.length));
+      if (!buttons[idx].classList.contains('active')) buttons[idx].click();
+    }
+  } else if (mapping.kind === 'bloom') {
+    if (type === 0x90 && d2 > 0) {
+      // Note On
+      if (bloomTarget === 1) {
+        // Already blooming — this Note On is a toggle-pad re-tap, treat as release
+        bloomUp(null);
+        if (bloomAutoReleaseTimer) { clearTimeout(bloomAutoReleaseTimer); bloomAutoReleaseTimer = null; }
+      } else {
+        bloomDown({ preventDefault: () => {} });
+        // Schedule auto-release in case the controller never sends Note Off (toggle mode)
+        if (bloomAutoReleaseTimer) clearTimeout(bloomAutoReleaseTimer);
+        bloomAutoReleaseTimer = setTimeout(() => {
+          if (bloomTarget === 1) bloomUp(null);
+          bloomAutoReleaseTimer = null;
+        }, 200);
+      }
+    } else if (type === 0x80 || (type === 0x90 && d2 === 0)) {
+      // Note Off — controller is momentary, release immediately and cancel auto-release
+      if (bloomAutoReleaseTimer) { clearTimeout(bloomAutoReleaseTimer); bloomAutoReleaseTimer = null; }
+      bloomUp(null);
+    } else if (type === 0xB0) {
+      // CC: above 64 = held, below = released
+      if (d2 >= 64 && bloomTarget === 0) bloomDown({ preventDefault: () => {} });
+      else if (d2 < 64 && bloomTarget === 1) bloomUp(null);
+    }
+  }
+}
+
+// Arming targets when in Learn mode — click any control to arm it.
+function armTarget(target) {
+  if (midiArmedTarget) midiArmedTarget.el.classList.remove('midi-armed');
+  midiArmedTarget = target;
+  target.el.classList.add('midi-armed');
+  setMidiActivity('Move a MIDI control to bind "' + target.id + '"');
+}
+
+function setupLearnClickHandlers() {
+  // Use capture phase so clicks during Learn don't actually trigger the control
+  document.addEventListener('click', (e) => {
+    if (!midiLearning) return;
+    // Find which bindable target was clicked
+    const targets = getBindableTargets();
+    for (const t of targets) {
+      if (t.el === e.target || t.el.contains(e.target)) {
+        // For segments, the click is on a child button — still arm the whole seg
+        e.preventDefault();
+        e.stopPropagation();
+        armTarget(t);
+        return;
+      }
+    }
+  }, true); // capture
+  // Also intercept range inputs (which fire 'input' not 'click')
+  document.addEventListener('mousedown', (e) => {
+    if (!midiLearning) return;
+    if (e.target && e.target.matches('input[type="range"]')) {
+      e.preventDefault();
+      e.stopPropagation();
+      armTarget({ kind: 'slider', id: e.target.id, el: e.target });
+    }
+  }, true);
+}
+
+document.getElementById('midiEnable').addEventListener('click', enableMidi);
+
+document.getElementById('midiLearn').addEventListener('click', () => {
+  midiLearning = !midiLearning;
+  const btn = document.getElementById('midiLearn');
+  btn.textContent = 'Learn: ' + (midiLearning ? 'On' : 'Off');
+  btn.style.background = midiLearning ? 'rgba(201, 122, 201, 0.25)' : 'rgba(255,255,255,0.04)';
+  btn.style.color = midiLearning ? '#c97ac9' : '#aaa';
+  document.body.classList.toggle('midi-learning', midiLearning);
+  if (!midiLearning && midiArmedTarget) {
+    midiArmedTarget.el.classList.remove('midi-armed');
+    midiArmedTarget = null;
+    setMidiActivity('');
+  } else if (midiLearning) {
+    setMidiActivity('Click a slider, segment, or the Bloom button to arm it');
+  }
+});
+
+document.getElementById('midiClear').addEventListener('click', () => {
+  if (!confirm('Clear all MIDI mappings?')) return;
+  midiMappings = {};
+  midiPickup = {};
+  saveMidiMappings();
+  refreshMappedHighlights();
+  setMidiActivity('All mappings cleared');
+});
+
+// Pickup mode resets when the user manually changes a slider
+document.querySelectorAll('input[type="range"]').forEach(el => {
+  el.addEventListener('pointerdown', () => {
+    // User is touching the slider, reset pickup so external moves don't fight
+    if (midiPickup[el.id]) midiPickup[el.id].captured = true;
+  });
+});
+
+setupLearnClickHandlers();
+
+// Try enumerating cameras on load — labels may be hidden until permission,
+// but on desktop with a prior grant they're often already available.
+refreshCameraDevices();
+
+// ---------- Pop-out visual window ----------
+let popOutWindow = null;
+let popOutChannel = null;
+const POP_CHANNEL_NAME = 'analog-video-synth-output';
+
+const POPOUT_HTML = `<!DOCTYPE html><html><head><meta charset="UTF-8"><title>Video Surfer - Output</title>
+<style>
+  *{margin:0;padding:0;box-sizing:border-box}
+  html,body{width:100%;height:100%;overflow:hidden;background:#000;cursor:none}
+  body.show-cursor{cursor:auto}
+  canvas{display:block;width:100vw;height:100vh;background:#000}
+  #hint{position:fixed;top:10px;left:10px;color:rgba(255,255,255,0.4);font-family:monospace;font-size:11px;pointer-events:none;transition:opacity 1.5s;background:rgba(0,0,0,0.5);padding:6px 10px;border-radius:4px}
+  #hint.fade{opacity:0}
+</style></head>
+<body>
+<canvas id="out"></canvas>
+<div id="hint">Drag this window to your external display, then press F for fullscreen · ESC exits · move mouse to show cursor</div>
+<script>
+const canvas = document.getElementById('out');
+const ctx = canvas.getContext('2d');
+const hint = document.getElementById('hint');
+function resize() {
+  canvas.width = window.innerWidth;
+  canvas.height = window.innerHeight;
+}
+resize();
+window.addEventListener('resize', resize);
+// Fullscreen transitions don't always fire window 'resize' reliably — be explicit
+document.addEventListener('fullscreenchange', () => {
+  // Small delay so the layout settles before we measure
+  setTimeout(resize, 50);
+  setTimeout(resize, 200);
+});
+
+const channel = new BroadcastChannel('${POP_CHANNEL_NAME}');
+channel.onmessage = (e) => {
+  const msg = e.data;
+  if (msg.type === 'frame' && msg.bitmap) {
+    try {
+      ctx.drawImage(msg.bitmap, 0, 0, canvas.width, canvas.height);
+    } catch (err) {
+      // Bitmap may have become invalid during fullscreen transition or window suspension
+    }
+    try { msg.bitmap.close(); } catch (e2) {}
+  } else if (msg.type === 'closing') {
+    document.body.innerHTML = '<div style="color:#888;font-family:monospace;padding:20px">Main window closed.</div>';
+  }
+};
+channel.postMessage({ type: 'hello' });
+// Re-send hello a few times in case main window's listener attaches a hair late
+setTimeout(() => channel.postMessage({ type: 'hello' }), 100);
+setTimeout(() => channel.postMessage({ type: 'hello' }), 500);
+
+// Fade hint after 4s
+setTimeout(() => hint.classList.add('fade'), 4000);
+
+// Fullscreen on F, cursor reveal on mouse move
+window.addEventListener('keydown', (e) => {
+  if (e.key === 'f' || e.key === 'F') {
+    if (document.fullscreenElement) document.exitFullscreen();
+    else document.documentElement.requestFullscreen().catch(() => {});
+  }
+});
+let cursorTimer;
+window.addEventListener('mousemove', () => {
+  document.body.classList.add('show-cursor');
+  clearTimeout(cursorTimer);
+  cursorTimer = setTimeout(() => document.body.classList.remove('show-cursor'), 2000);
+});
+
+// Notify main window when this window is closing
+window.addEventListener('beforeunload', () => {
+  channel.postMessage({ type: 'popoutClosing' });
+});
+</` + `script></body></html>`;
+
+function openPopOut() {
+  if (popOutWindow && !popOutWindow.closed) {
+    popOutWindow.focus();
+    return;
+  }
+  // CRITICAL: Set up the channel BEFORE opening the popup so we don't miss
+  // the popup's 'hello' message (which it sends immediately on load).
+  if (!popOutChannel) {
+    popOutChannel = new BroadcastChannel(POP_CHANNEL_NAME);
+    popOutChannel.onmessage = (e) => {
+      if (e.data.type === 'hello') {
+        document.getElementById('popOutStatus').textContent = 'Output window connected. Laptop preview off to save GPU.';
+        document.getElementById('popOutStatus').style.color = '#7ac9b0';
+        document.getElementById('popOutBtn').textContent = 'Output Active';
+        document.getElementById('popOutBtn').style.background = 'rgba(122, 201, 176, 0.3)';
+        enablePopOutMode();
+      } else if (e.data.type === 'popoutClosing') {
+        disablePopOutMode();
+      }
+    };
+  }
+  // Initial window size — user can resize and move freely
+  const features = 'width=960,height=540,menubar=no,toolbar=no,location=no,status=no';
+  popOutWindow = window.open('', 'analogVideoSynthOutput', features);
+  if (!popOutWindow) {
+    document.getElementById('popOutStatus').textContent = 'Popup blocked. Allow popups for this site and try again.';
+    document.getElementById('popOutStatus').style.color = '#c97a7a';
+    return;
+  }
+  popOutWindow.document.open();
+  popOutWindow.document.write(POPOUT_HTML);
+  popOutWindow.document.close();
+
+  // Watch for the popup being closed manually
+  const checkClosed = setInterval(() => {
+    if (popOutWindow && popOutWindow.closed) {
+      clearInterval(checkClosed);
+      disablePopOutMode();
+      popOutWindow = null;
+    }
+  }, 1000);
+
+  // If main window closes, tell popup
+  window.addEventListener('beforeunload', () => {
+    if (popOutChannel) popOutChannel.postMessage({ type: 'closing' });
+  });
+}
+
+// Pop-out mode: hide laptop canvas and shrink it so we're not rendering 2x.
+// The canvas is still drawn into (required for the bitmap capture) but at a
+// smaller size and hidden from the laptop screen so it costs almost nothing.
+let popOutModeOn = false;
+let preservedCanvasSize = null;
+function enablePopOutMode() {
+  if (popOutModeOn) return;
+  popOutModeOn = true;
+  preservedCanvasSize = { w: w, h: h };
+  // Shrink the main canvas to the resolution we want to send to the popup.
+  // 960x540 is a good default — popup window will upscale to its own size cheaply.
+  const popW = 960, popH = 540;
+  canvas.style.display = 'none';
+  renderer.setSize(popW, popH, false);
+  ruttCamera.aspect = popW / popH;
+  ruttCamera.updateProjectionMatrix();
+  // Also resize the offscreen pattern targets to match
+  rtA.dispose(); rtB.dispose();
+  w = popW; h = popH;
+  rtA = makeRT(); rtB = makeRT();
+}
+function disablePopOutMode() {
+  if (!popOutModeOn) return;
+  popOutModeOn = false;
+  canvas.style.display = '';
+  document.getElementById('popOutStatus').textContent = '';
+  document.getElementById('popOutBtn').textContent = 'Pop Out Visual';
+  document.getElementById('popOutBtn').style.background = 'rgba(122, 201, 176, 0.15)';
+  // Restore main-window rendering size
+  if (preservedCanvasSize) {
+    w = window.innerWidth;
+    h = window.innerHeight;
+    renderer.setSize(w, h, false);
+    ruttCamera.aspect = w / h;
+    ruttCamera.updateProjectionMatrix();
+    rtA.dispose(); rtB.dispose();
+    rtA = makeRT(); rtB = makeRT();
+  }
+}
+
+document.getElementById('popOutBtn').addEventListener('click', openPopOut);
+
+// Per-frame bitmap capture + broadcast (called from render loop)
+// Fire-and-forget: don't await the bitmap, just skip frames if the previous
+// capture is still in flight. Capped at ~30fps to halve readback overhead.
+let popBitmapInFlight = false;
+let popLastSendTime = 0;
+const POP_MIN_INTERVAL_MS = 33; // ~30fps cap
+function broadcastFrameIfPopOut(now) {
+  if (!popOutWindow || popOutWindow.closed || !popOutChannel) return;
+  if (popBitmapInFlight) return;
+  if (now - popLastSendTime < POP_MIN_INTERVAL_MS) return;
+  popLastSendTime = now;
+  popBitmapInFlight = true;
+  // Fire async without awaiting; the render loop continues immediately
+  createImageBitmap(canvas).then(bitmap => {
+    try {
+      popOutChannel.postMessage({ type: 'frame', bitmap }, [bitmap]);
+    } catch (e) {
+      // Channel might have closed mid-send; close bitmap to free memory
+      try { bitmap.close(); } catch (e2) {}
+    }
+    popBitmapInFlight = false;
+  }).catch(() => {
+    popBitmapInFlight = false;
+  });
+}
+
+
+// Parameter smoothing for MIDI-driven changes. Smooths the visible-output values
+// of selected params to mask 7-bit MIDI steps. UI sliders still snap to MIDI values
+// instantly so the controller and screen stay in sync.
+const smoothed = {};
+const SMOOTH_PARAMS = [
+  'osc1Freq', 'osc2Freq',     // wide log range
+  'osc1Phase', 'osc2Phase',
+  'fbAmount', 'fbZoom', 'fbRot',
+  'ruttDisp', 'ruttTilt', 'ruttRot', 'ruttZoom',
+  'fmAmt',
+  'bassAmt', 'midAmt', 'trebAmt'
+];
+const SMOOTH_RATE = 0.18; // ~80ms time constant at 60fps
+function smoothParams() {
+  for (const id of SMOOTH_PARAMS) {
+    const target = state[id];
+    if (typeof target !== 'number') continue;
+    if (smoothed[id] === undefined) smoothed[id] = target;
+    smoothed[id] += (target - smoothed[id]) * SMOOTH_RATE;
+    // Snap when within noise floor
+    if (Math.abs(target - smoothed[id]) < Math.abs(target) * 0.0005 + 0.00001) {
+      smoothed[id] = target;
+    }
+  }
+}
+// Helper that reads smoothed value if present, else raw state
+function P(id) { return smoothed[id] !== undefined ? smoothed[id] : state[id]; }
+
+// ---------- Render loop ----------
+const startTime = performance.now();
+let lastFrameTime = startTime;
+let fpsAccum = 0;
+let fpsLastUpdate = startTime;
+let driftPhase1 = 0;
+let driftPhase2 = 0;
+let colorDriftPhase = 0; // accumulates hue drift for Osc2 when Clr Drift is active
+const TAU = Math.PI * 2;
+function frame() {
+  const now = performance.now();
+  const t = (now - startTime) / 1000;
+  const dt = Math.min((now - lastFrameTime) / 1000, 0.1); // clamp to avoid jumps after tab switch
+  lastFrameTime = now;
+
+  // Smooth MIDI-driven (and other) parameter changes for analog feel
+  smoothParams();
+
+  // Accumulate independent drift phases (TAU per second at drift=1)
+  driftPhase1 = (driftPhase1 + state.osc1Drift * dt * TAU) % (TAU * 1000);
+  driftPhase2 = (driftPhase2 + state.osc2Drift * dt * TAU) % (TAU * 1000);
+
+  // Osc2 color drift: borrow the pattern Drift rate(s) to cycle Osc2's hue.
+  // Off=0, O1=use osc1Drift, O2=use osc2Drift, Both=sum. Hue is 0..1 per cycle,
+  // and drift rate is cycles/sec, so we scale modestly so color cycles aren't dizzying.
+  let clrRate = 0;
+  if (state.osc2ClrDrift === 1) clrRate = state.osc1Drift;
+  else if (state.osc2ClrDrift === 2) clrRate = state.osc2Drift;
+  else if (state.osc2ClrDrift === 3) clrRate = state.osc1Drift + state.osc2Drift;
+  colorDriftPhase = (colorDriftPhase + clrRate * dt * 0.5) % 1000;
+
+  // Run LFOs
+  // LFO rates are shaped logarithmically (see shapeRateHz) for fine low-end control.
+  const l1 = lfo(t, shapeRateHz(state.lfo1Rate), state.lfo1Wave, 0) * state.lfo1Depth;
+  const l2 = lfo(t, shapeRateHz(state.lfo2Rate), state.lfo2Wave, 1) * state.lfo2Depth;
+
+  // Apply LFO routing
+  let o1Freq = P('osc1Freq');
+  let o2Freq = P('osc2Freq');
+  let o1Phase = P('osc1Phase') + driftPhase1;
+  let o2Phase = P('osc2Phase') + driftPhase2;
+  let dispMod = 0;
+  let rotMod = 0;
+  let fbHueMod = 0;
+  let fbZoomMod = 0;
+  let fbAmtMod = 0;
+  let fbRotMod = 0;
+  let o1HueMod = 0;
+  let o2HueMod = 0;
+
+  // LFO 1 destinations: O1F / O1H / FBAMT / FBHUE
+  if (state.lfo1Dest === 0) o1Freq *= (1 + l1);
+  else if (state.lfo1Dest === 1) o1HueMod += l1;
+  else if (state.lfo1Dest === 2) fbAmtMod += l1;
+  else if (state.lfo1Dest === 3) fbHueMod += l1;
+
+  // LFO 2 destinations: O2F / O2H / FBZM / FBROT
+  if (state.lfo2Dest === 0) o2Freq *= (1 + l2);
+  else if (state.lfo2Dest === 1) o2HueMod += l2;
+  else if (state.lfo2Dest === 2) fbZoomMod += l2;
+  else if (state.lfo2Dest === 3) fbRotMod += l2;
+
+  // Audio reactivity
+  updateAudio();
+  let audioBright = 0;
+  let audioFbBoost = 0;
+  function applyBand(level, dest, amt) {
+    const v = level * amt;
+    if (dest === 0) dispMod += v;              // Disp
+    else if (dest === 1) o1Freq *= (1 + v);    // O1F
+    else if (dest === 2) audioFbBoost += v;    // FB
+    else if (dest === 3) rotMod += v * Math.PI;// Rot
+    else if (dest === 4) audioBright += v;     // Bright
+  }
+  applyBand(bassLvl, state.bassDest, P('bassAmt'));
+  applyBand(midLvl, state.midDest, P('midAmt'));
+  applyBand(trebLvl, state.trebDest, P('trebAmt'));
+
+  // Update uniforms
+  patternMat.uniforms.uTime.value = t;
+  patternMat.uniforms.uO1.value.set(state.osc1Wave, state.osc1Axis, o1Freq, o1Phase);
+  patternMat.uniforms.uO1Amp.value = state.osc1Amp;
+  patternMat.uniforms.uO2.value.set(state.osc2Wave, state.osc2Axis, o2Freq, o2Phase);
+  patternMat.uniforms.uO2Amp.value = state.osc2Amp;
+  patternMat.uniforms.uOscMix.value = state.oscMix;
+  // Oscillator hue, with optional LFO modulation. Hue wraps 0..1 around the color
+  // wheel, so we use modulo to cycle smoothly rather than clamp. Scale of 0.5 means
+  // a full-depth LFO sweeps up to half the color wheel each direction.
+  let o1h = state.osc1Hue + o1HueMod * 0.5;
+  let o2h = state.osc2Hue + o2HueMod * 0.5 + (state.osc2ClrDrift > 0 ? colorDriftPhase : 0);
+  o1h = ((o1h % 1) + 1) % 1;
+  o2h = ((o2h % 1) + 1) % 1;
+  patternMat.uniforms.uO1Hue.value = o1h;
+  patternMat.uniforms.uO2Hue.value = o2h;
+  patternMat.uniforms.uBlendMode.value = state.blendMode;
+  patternMat.uniforms.uBgMode.value = state.bgMode;
+  patternMat.uniforms.uBright.value = state.bright + audioBright;
+  patternMat.uniforms.uContrast.value = state.contrast;
+  // LFO1 -> FBAMT modulates feedback amount around the user's set value (plus any
+  // audio boost). Scale 0.3 gives a strong but controlled swell; clamped to valid range.
+  patternMat.uniforms.uFbAmount.value = Math.max(0, Math.min(0.99, P('fbAmount') + audioFbBoost + fbAmtMod * 0.3));
+  // LFO2 -> FBZM modulates feedback zoom around the user's set value. Scale is small
+  // because fbZoom is already in tight 0.85-1.15 territory and big swings would freeze
+  // the loop. 0.05 here gives a noticeable but musically-useful sweep.
+  patternMat.uniforms.uFbZoom.value = P('fbZoom') + fbZoomMod * 0.05;
+  // LFO2 -> FBROT modulates feedback rotation. fbRot is in -0.15..0.15; scale to taste.
+  patternMat.uniforms.uFbRot.value = P('fbRot') + fbRotMod * 0.06;
+  // LFO1 -> FBHUE modulates the feedback hue shift. The fbHue param is already in
+  // -0.05..0.05 (one cycle = full color wheel rotation), so we scale LFO accordingly.
+  patternMat.uniforms.uFbHue.value = state.fbHue + fbHueMod * 0.05;
+  patternMat.uniforms.uPrev.value = rtB.texture;
+
+  // Video-input uniforms — works for both camera and video-file sources.
+  updateVideoFile();
+  // Mirror only applies to camera; video files shouldn't be mirrored by the auto rule
+  const resolvedMirror = state.vidSrc === 1
+    ? (state.camMirror === 1 ? 1 : 0)  // video: only mirror if explicitly On
+    : (state.camMirror === -1 ? (state.camFacing === 1 ? 1 : 0) : state.camMirror);
+  const camAspect = getActiveVideoAspect();
+  const screenAspect = w / h;
+  // Active only if the current source is actually available
+  const sourceReady = state.vidSrc === 0 ? camActive : fileVidLoaded;
+  const camModeVal = sourceReady ? state.camMode : 0;
+  patternMat.uniforms.uCamMode.value = camModeVal;
+  patternMat.uniforms.uCamMix.value = state.camMix;
+  patternMat.uniforms.uCamBright.value = state.camBright;
+  patternMat.uniforms.uCamMirror.value = resolvedMirror;
+  patternMat.uniforms.uCamAspect.value = camAspect;
+  patternMat.uniforms.uScreenAspect.value = screenAspect;
+  ruttUniforms.uCamMode.value = camModeVal;
+  ruttUniforms.uCamMix.value = state.camMix;
+  ruttUniforms.uCamBright.value = state.camBright;
+  ruttUniforms.uCamMirror.value = resolvedMirror;
+  ruttUniforms.uCamAspect.value = camAspect;
+  ruttUniforms.uScreenAspect.value = screenAspect;
+
+  // FM. LFO1 always also modulates FM depth, scaled by the FM Mod slider —
+  // independent of LFO1's assignable Dest. At fmMod=0 this does nothing.
+  // l1 is already LFO1 output * its depth; we scale the swing to the FM Amt range (0-3).
+  let fmDepth = P('fmAmt') + l1 * state.fmMod * 1.5;
+  fmDepth = Math.max(0, fmDepth);
+  patternMat.uniforms.uFmOn.value = state.fmOn;
+  patternMat.uniforms.uFmAmt.value = fmDepth;
+
+  // Bloom: smooth attack (fast) and release (medium) for analog feel
+  const bloomAttack = 0.35;   // higher = faster onset
+  const bloomRelease = 0.12;  // higher = faster decay
+  const rate = bloomTarget > bloomActive ? bloomAttack : bloomRelease;
+  bloomActive += (bloomTarget - bloomActive) * rate;
+  if (bloomActive < 0.001) bloomActive = 0;
+  patternMat.uniforms.uBloomActive.value = bloomActive;
+  patternMat.uniforms.uBloomStyle.value = state.bloomStyle;
+  patternMat.uniforms.uBloomIntensity.value = state.bloomIntensity;
+
+  // Render pattern to rtA
+  renderer.setRenderTarget(rtA);
+  renderer.render(patternScene, patternCamera);
+
+  // Update rutt uniforms
+  ruttUniforms.uMap.value = rtA.texture;
+  ruttUniforms.uDisp.value = P('ruttDisp') + dispMod;
+  ruttUniforms.uTilt.value = P('ruttTilt');
+  ruttUniforms.uRotZ.value = P('ruttRot') + rotMod;
+  ruttUniforms.uZoom.value = P('ruttZoom');
+  flatMat.uniforms.uMap.value = rtA.texture;
+
+  // Render to screen
+  renderer.setRenderTarget(null);
+
+  // Background clear color based on mode
+  if (state.bgMode === 0) renderer.setClearColor(0xffffff, 1);
+  else if (state.bgMode === 1) renderer.setClearColor(0x000000, 1);
+  else renderer.setClearColor(0x00b140, 1);
+  renderer.clear();
+
+  if (state.ruttMode === 2) {
+    renderer.render(flatScene, flatCam);
+  } else {
+    renderer.render(ruttScene, ruttCamera);
+  }
+
+  // Swap for feedback only if it might be read next frame
+  // (when feedback amount is 0 and bloom is inactive, no read happens)
+  const fbInUse = state.fbAmount > 0.001 || bloomActive > 0.001;
+  if (fbInUse) {
+    const tmp = rtA; rtA = rtB; rtB = tmp;
+  }
+
+  // Send to pop-out window if active (fire-and-forget, no blocking)
+  broadcastFrameIfPopOut(now);
+
+  // FPS counter (smoothed)
+  fpsAccum++;
+  if (now - fpsLastUpdate > 500) {
+    const fps = fpsAccum / ((now - fpsLastUpdate) / 1000);
+    const el = document.getElementById('fpsDisplay');
+    if (el) {
+      el.textContent = 'FPS: ' + fps.toFixed(1) + (popOutWindow && !popOutWindow.closed ? '  ·  out: ~30' : '');
+      el.style.color = fps < 30 ? '#c97a7a' : (fps < 50 ? '#c9a87a' : '#7ac9b0');
+    }
+    fpsAccum = 0;
+    fpsLastUpdate = now;
+  }
+
+  requestAnimationFrame(frame);
+}
+updateRuttMode();
+frame();
+</script>
+</body>
+</html>
