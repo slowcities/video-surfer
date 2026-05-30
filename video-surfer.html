@@ -1,4 +1,16 @@
 <!DOCTYPE html>
+<!--
+  Video Surfer — browser-based video synthesis
+  Copyright © 2026 Slow Cities
+
+  Licensed under Creative Commons Attribution-NonCommercial 4.0 International
+  (CC BY-NC 4.0). https://creativecommons.org/licenses/by-nc/4.0/
+
+  You may use, share, adapt, and perform with this freely, including paid
+  performances and gigs. You may not sell it or bundle it into a product or
+  service you sell. Keep this notice and attribution to Slow Cities intact.
+  For commercial use beyond live performance, get in touch.
+-->
 <html lang="en">
 <head>
 <meta charset="UTF-8">
@@ -209,6 +221,14 @@
           <button data-val="3">Both</button>
         </div>
       </div>
+      <div class="seg-row"><label>Div</label>
+        <div class="seg" data-param="osc2ClrDriftDiv">
+          <button data-val="1" class="active">1</button>
+          <button data-val="0.5">.5</button>
+          <button data-val="0.25">.25</button>
+          <button data-val="0.1">.1</button>
+        </div>
+      </div>
     </div>
 
     <div class="panel lfo1">
@@ -268,6 +288,22 @@
       <div class="row"><label>Tilt</label><input type="range" id="ruttTilt" min="-1.2" max="1.2" step="0.01" value="0.45"><span class="val" id="ruttTiltV">0.45</span></div>
       <div class="row"><label>Rot</label><input type="range" id="ruttRot" min="-3.14" max="3.14" step="0.01" value="0"><span class="val" id="ruttRotV">0.00</span></div>
       <div class="row"><label>Zoom</label><input type="range" id="ruttZoom" min="0.5" max="2.5" step="0.01" value="1.2"><span class="val" id="ruttZoomV">1.20</span></div>
+      <div class="seg-row"><label>Rot Drift</label>
+        <div class="seg" data-param="ruttRotDrift">
+          <button data-val="0" class="active">Off</button>
+          <button data-val="1">O1</button>
+          <button data-val="2">O2</button>
+          <button data-val="3">Both</button>
+        </div>
+      </div>
+      <div class="seg-row"><label>Div</label>
+        <div class="seg" data-param="ruttRotDriftDiv">
+          <button data-val="1" class="active">1</button>
+          <button data-val="0.5">.5</button>
+          <button data-val="0.25">.25</button>
+          <button data-val="0.1">.1</button>
+        </div>
+      </div>
     </div>
 
     <div class="panel fb">
@@ -370,7 +406,7 @@
           <button data-val="0" class="active">Disp</button>
           <button data-val="1">O1F</button>
           <button data-val="2">FB</button>
-          <button data-val="3">Rot</button>
+          <button data-val="3">FBROT</button>
           <button data-val="4">Bri</button>
         </div>
       </div>
@@ -381,7 +417,7 @@
           <button data-val="0">Disp</button>
           <button data-val="1" class="active">O1F</button>
           <button data-val="2">FB</button>
-          <button data-val="3">Rot</button>
+          <button data-val="3">FBROT</button>
           <button data-val="4">Bri</button>
         </div>
       </div>
@@ -392,7 +428,7 @@
           <button data-val="0">Disp</button>
           <button data-val="1">O1F</button>
           <button data-val="2" class="active">FB</button>
-          <button data-val="3">Rot</button>
+          <button data-val="3">FBROT</button>
           <button data-val="4">Bri</button>
         </div>
       </div>
@@ -463,10 +499,10 @@ import * as THREE from 'three';
 // ---------- State ----------
 const state = {
   osc1Wave: 0, osc1Axis: 0, osc1Freq: 8, osc1Phase: 0, osc1Amp: 0.8, osc1Hue: 0, osc1Drift: 0,
-  osc2Wave: 0, osc2Axis: 1, osc2Freq: 12, osc2Phase: 0, osc2Amp: 0.6, osc2Hue: 0.58, osc2Drift: 0, osc2ClrDrift: 0,
+  osc2Wave: 0, osc2Axis: 1, osc2Freq: 12, osc2Phase: 0, osc2Amp: 0.6, osc2Hue: 0.58, osc2Drift: 0, osc2ClrDrift: 0, osc2ClrDriftDiv: 1,
   lfo1Wave: 0, lfo1Dest: 0, lfo1Rate: 0, lfo1Depth: 0,
   lfo2Wave: 0, lfo2Dest: 0, lfo2Rate: 0, lfo2Depth: 0,
-  ruttMode: 2, ruttDisp: 0.6, ruttTilt: 0.45, ruttRot: 0, ruttZoom: 1.2,
+  ruttMode: 2, ruttDisp: 0.6, ruttTilt: 0.45, ruttRot: 0, ruttZoom: 1.2, ruttRotDrift: 0, ruttRotDriftDiv: 1,
   fbAmount: 0, fbZoom: 1.01, fbRot: 0.01, fbHue: 0,
   bgMode: 1, blendMode: 0, oscMix: 0.5, bright: 1, contrast: 1,
   camMode: 0, camFacing: 0, camMix: 0.7, camBright: 1, camMirror: -1,
@@ -1607,7 +1643,9 @@ document.querySelectorAll('.seg').forEach(seg => {
     btn.addEventListener('click', async () => {
       seg.querySelectorAll('button').forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
-      state[param] = parseInt(btn.dataset.val, 10);
+      // parseFloat handles both integer values (most segments) and fractional ones
+      // (e.g. division selectors that use 0.5, 0.25, 0.1).
+      state[param] = parseFloat(btn.dataset.val);
       if (param === 'ruttMode') updateRuttMode();
       if (param === 'camFacing' && camActive) {
         await startCamera(state.camFacing);
@@ -2213,6 +2251,7 @@ let fpsLastUpdate = startTime;
 let driftPhase1 = 0;
 let driftPhase2 = 0;
 let colorDriftPhase = 0; // accumulates hue drift for Osc2 when Clr Drift is active
+let ruttRotDriftPhase = 0; // accumulates rutt mesh rotation when Rot Drift is active
 const TAU = Math.PI * 2;
 function frame() {
   const now = performance.now();
@@ -2230,11 +2269,20 @@ function frame() {
   // Osc2 color drift: borrow the pattern Drift rate(s) to cycle Osc2's hue.
   // Off=0, O1=use osc1Drift, O2=use osc2Drift, Both=sum. Hue is 0..1 per cycle,
   // and drift rate is cycles/sec, so we scale modestly so color cycles aren't dizzying.
+  // The Div selector further divides the rate (1, .5, .25, .1) for slower pacing.
   let clrRate = 0;
   if (state.osc2ClrDrift === 1) clrRate = state.osc1Drift;
   else if (state.osc2ClrDrift === 2) clrRate = state.osc2Drift;
   else if (state.osc2ClrDrift === 3) clrRate = state.osc1Drift + state.osc2Drift;
-  colorDriftPhase = (colorDriftPhase + clrRate * dt * 0.5) % 1000;
+  colorDriftPhase = (colorDriftPhase + clrRate * state.osc2ClrDriftDiv * dt * 0.5) % 1000;
+
+  // Rutt/Etra rotational drift: borrow drift rate(s) to slowly rotate the mesh.
+  // Same source-selector style as Osc2 color drift, with its own Div selector.
+  let rotDriftRate = 0;
+  if (state.ruttRotDrift === 1) rotDriftRate = state.osc1Drift;
+  else if (state.ruttRotDrift === 2) rotDriftRate = state.osc2Drift;
+  else if (state.ruttRotDrift === 3) rotDriftRate = state.osc1Drift + state.osc2Drift;
+  ruttRotDriftPhase = (ruttRotDriftPhase + rotDriftRate * state.ruttRotDriftDiv * dt * 0.3) % (Math.PI * 2 * 1000);
 
   // Run LFOs
   // LFO rates are shaped logarithmically (see shapeRateHz) for fine low-end control.
@@ -2276,7 +2324,7 @@ function frame() {
     if (dest === 0) dispMod += v;              // Disp
     else if (dest === 1) o1Freq *= (1 + v);    // O1F
     else if (dest === 2) audioFbBoost += v;    // FB
-    else if (dest === 3) rotMod += v * Math.PI;// Rot
+    else if (dest === 3) fbRotMod += v;        // FBROT (feedback rotation)
     else if (dest === 4) audioBright += v;     // Bright
   }
   applyBand(bassLvl, state.bassDest, P('bassAmt'));
@@ -2304,14 +2352,18 @@ function frame() {
   patternMat.uniforms.uBright.value = state.bright + audioBright;
   patternMat.uniforms.uContrast.value = state.contrast;
   // LFO1 -> FBAMT modulates feedback amount around the user's set value (plus any
-  // audio boost). Scale 0.3 gives a strong but controlled swell; clamped to valid range.
-  patternMat.uniforms.uFbAmount.value = Math.max(0, Math.min(0.99, P('fbAmount') + audioFbBoost + fbAmtMod * 0.3));
-  // LFO2 -> FBZM modulates feedback zoom around the user's set value. Scale is small
-  // because fbZoom is already in tight 0.85-1.15 territory and big swings would freeze
-  // the loop. 0.05 here gives a noticeable but musically-useful sweep.
-  patternMat.uniforms.uFbZoom.value = P('fbZoom') + fbZoomMod * 0.05;
-  // LFO2 -> FBROT modulates feedback rotation. fbRot is in -0.15..0.15; scale to taste.
-  patternMat.uniforms.uFbRot.value = P('fbRot') + fbRotMod * 0.06;
+  // audio boost). Scale 0.5 gives meaningful expressive swing while still respecting
+  // the 0-0.99 clamp at the ends.
+  patternMat.uniforms.uFbAmount.value = Math.max(0, Math.min(0.99, P('fbAmount') + audioFbBoost + fbAmtMod * 0.5));
+  // LFO2 -> FBZM modulates feedback zoom *multiplicatively*. fbZoom lives in a narrow
+  // range (0.85-1.15) where small additive swings feel mismatched — the perceived rate
+  // of zoom is exponential in this region. Multiplying by exp(LFO * 0.12) gives a
+  // symmetric perceived swing through the base value: at full LFO the zoom moves
+  // roughly ±12% around the set point in perceptual terms.
+  patternMat.uniforms.uFbZoom.value = P('fbZoom') * Math.exp(fbZoomMod * 0.12);
+  // LFO2 -> FBROT modulates feedback rotation. Bumped from 0.06 to 0.10 for parity
+  // with the more expressive feel of the other feedback destinations.
+  patternMat.uniforms.uFbRot.value = P('fbRot') + fbRotMod * 0.10;
   // LFO1 -> FBHUE modulates the feedback hue shift. The fbHue param is already in
   // -0.05..0.05 (one cycle = full color wheel rotation), so we scale LFO accordingly.
   patternMat.uniforms.uFbHue.value = state.fbHue + fbHueMod * 0.05;
@@ -2367,7 +2419,7 @@ function frame() {
   ruttUniforms.uMap.value = rtA.texture;
   ruttUniforms.uDisp.value = P('ruttDisp') + dispMod;
   ruttUniforms.uTilt.value = P('ruttTilt');
-  ruttUniforms.uRotZ.value = P('ruttRot') + rotMod;
+  ruttUniforms.uRotZ.value = P('ruttRot') + rotMod + (state.ruttRotDrift > 0 ? ruttRotDriftPhase : 0);
   ruttUniforms.uZoom.value = P('ruttZoom');
   flatMat.uniforms.uMap.value = rtA.texture;
 
