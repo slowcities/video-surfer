@@ -1,10 +1,12 @@
 # Video Surfer
 
-*Browser-based video synthesis for riding visual waves.*
+*Browser-based video synthesis for riding the standing waves.*
+
+**v1.2**
 
 A web-native experimental video synthesizer in the lineage of analog video tools like the Rutt/Etra Scan Processor, the Sandin Image Processor, and the Paik/Abe Video Synthesizer. Built to bring some of that esoteric corner of video art history within reach of anyone with a phone, laptop, or tablet — no hardware, no install, no signup.
 
-Made by **Daniel Olivo**.
+Made by **Slow Cities**.
 
 ---
 
@@ -12,7 +14,7 @@ Made by **Daniel Olivo**.
 
 Open the deployed version in any modern browser (mobile or desktop):
 
-→ **[https://github.com/slowcities/video-surfer]**
+→ **(https://github.com/slowcities/video-surfer/)**
 
 The whole thing is a single HTML file. Camera, microphone, and audio decoding require an HTTPS context, which means a hosted URL — opening from `file://` will load the synth but those features won't work.
 
@@ -24,11 +26,11 @@ The whole thing is a single HTML file. Camera, microphone, and audio decoding re
 
 **Cross-modulation (FM) on Osc1** — Osc2 modulates Osc1's phase, which produces the same kind of harmonic spreading and complex textures FM gives you in audio. An FM Amt control sets the depth, and an FM Mod control lets LFO1 wobble that depth over time so the FM texture breathes (independent of whatever else LFO1 is assigned to; at zero it does nothing).
 
-**Color drift on Osc2** — toggles continuous hue cycling for Osc2 only, borrowing one of the oscillators' drift rates to set the speed (Off / O1 / O2 / Both, where Both sums the two rates). This keeps Osc1 as a stable color anchor while Osc2's hue wanders, so the overlap zones between them constantly recolor against a fixed reference.
+**Color drift on Osc2** — toggles continuous hue cycling for Osc2 only, borrowing one of the oscillators' drift rates to set the speed (Off / O1 / O2 / Both, where Both sums the two rates). A Division selector (1, ½, ¼, 1/10) gears the cycle down for slower color evolution. This keeps Osc1 as a stable color anchor while Osc2's hue wanders, so the overlap zones between them constantly recolor against a fixed reference.
 
 **Two LFOs**, kept as the slow, autonomous foundation layer, with sine, triangle, square, and sample-and-hold shapes. Each owns its matching oscillator plus two feedback parameters: LFO1 routes to Osc1 frequency, Osc1 hue, feedback amount, or feedback hue; LFO2 routes to Osc2 frequency, Osc2 hue, feedback zoom, or feedback rotation. Between them the two LFOs can modulate all four feedback parameters — so the feedback engine can swell, recolor, breathe, and counter-rotate on its own with no hands on the controls. The rate sliders are shaped logarithmically, giving fine control through the slow range where the most useful motion lives (full range roughly 0.01 to 5 Hz, with most of the slider travel devoted to the slow end). They start silent; dial in as needed.
 
-**Rutt/Etra displacement** of the rendered pattern onto a 3D mesh, viewable as wireframe (the classic 1973 scan-line look) or shaded solid, with tilt, rotation, and zoom controls. The original Rutt/Etra used a CRT and a camera angled at it; this is the same idea in shader math. Off by default, so the synth boots showing the flat oscillator pattern — switch it on to fold the image into 3D.
+**Rutt/Etra displacement** of the rendered pattern onto a 3D mesh, viewable as wireframe (the classic 1973 scan-line look) or shaded solid, with tilt, rotation, and zoom controls. The original Rutt/Etra used a CRT and a camera angled at it; this is the same idea in shader math. Off by default, so the synth boots showing the flat oscillator pattern — switch it on to fold the image into 3D. A Rot Drift control can continuously rotate the mesh at a rate borrowed from one or both oscillator drift sliders, with a Division selector (1, ½, ¼, 1/10) for gearing the rotation down to meditative speeds.
 
 **Frame feedback** with independent amount, zoom, rotation, and hue shift on the prior frame. Push amount past 0.9 with small zoom and rotation offsets for infinite-tunnel territory. All four feedback parameters are reachable by the LFOs for autonomous evolving motion.
 
@@ -36,7 +38,7 @@ The whole thing is a single HTML file. Camera, microphone, and audio decoding re
 
 **Video input** from either the device camera or a loaded video file (MP4/H.264 recommended; WebM and MOV work where the browser supports them). Either source can act as a background, a displacement source for the Rutt/Etra mesh, or both simultaneously — point a camera at a candle or drop in a clip of moving water and it becomes terrain the synth flows over. Camera mode offers a device selector (built-in cameras, USB webcams, and HDMI capture devices all appear once permission is granted), front/rear facing for phones, and mirroring; video-file mode offers play/pause, position scrubbing, and looping, with the file's own audio muted by default and an unmute option. Footage with clear light/dark structure and slower movement reads more legibly as displacement than fast-cut, highly detailed video. Because capture devices appear in the selector, you can feed external video — a camcorder, another synth's output, or any HDMI source through a USB capture dongle — straight into the synth as a live texture.
 
-**Audio reactivity** from either a loaded file (MP3, WAV, M4A, OGG, FLAC) or live microphone input. The signal is split into bass, mid, and treble bands, each independently routable to a destination (displacement, oscillator frequency, feedback, rotation, brightness) with its own depth. Mic mode is analyzed only — no signal is routed back to your speakers.
+**Audio reactivity** from either a loaded file (MP3, WAV, M4A, OGG, FLAC) or live microphone input. The signal is split into bass, mid, and treble bands, each independently routable to a destination (mesh displacement, oscillator frequency, feedback amount, feedback rotation, brightness) with its own depth. Mic mode is analyzed only — no signal is routed back to your speakers.
 
 **Drag and drop** an audio or video file anywhere onto the window to load it — audio files route to the audio engine, video files to the video engine. This avoids the file-picker focus change that can drop a fullscreen output window. A standard file picker is also available for each.
 
@@ -67,6 +69,8 @@ A few patches to try after you open it:
 **Breathing FM.** Turn on FM (Osc1 panel), set FM Amt around 1.0, give LFO1 a slow rate and some depth, then bring FM Mod up from zero. The harmonic complexity of Osc1 pulses in and out on the LFO's clock without touching anything else.
 
 **Wandering color.** Give Osc2 a small drift, set its Clr Drift to O2 (or O1, or Both), and leave Osc1 on a fixed hue. Osc2's color slowly cycles the spectrum while Osc1 holds steady, so every overlap between them recolors continuously against the anchor.
+
+**Two scales of rotation.** Set Rutt/Etra to Wire mode and give Osc1 a small drift (~0.3). Switch Rot Drift to O1 — the whole mesh turns slowly and meditatively as a foundation. Then route Bass to FBROT and play a kick-heavy track. The mesh keeps its serene slow rotation while the feedback inside it twitches with each kick. Two scales of rotational motion happening at once: foundation and gesture.
 
 **Vinyl reactor.** Place the laptop near a record player. Mic on, all three bands routed to different destinations. Surface noise and groove crackle drive the treble routing; bass hits move the displacement.
 
@@ -103,6 +107,7 @@ The hide-UI button (top-right of the controls window) clears the laptop screen e
 - **Less is often more.** Most of the best-looking patches use modest values for almost everything. The synth rewards subtlety.
 - **Audio reactivity stacks with manual controls.** Audio band routings *add to* your manual slider values rather than replacing them, so you can set a baseline and have the music push it from there.
 - **MIDI pickup mode** means you have to "find" the parameter when you grab a knob — turn until you cross its current value, then it locks on. Touching a slider with the mouse releases pickup so external moves don't fight you.
+- **The Division selectors on the drift controls** (Osc2 Color Drift and Rutt Rot Drift) gear the drift output down without needing to change the underlying Drift slider. This lets you keep oscillator pattern scrolling at a normal pace while pacing color cycling or mesh rotation much more slowly — useful for long-form work where you want different layers of motion happening at very different time scales.
 
 ---
 
