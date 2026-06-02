@@ -676,25 +676,27 @@ const patternMat = new THREE.ShaderMaterial({
     void main() {
       vec2 uv = vUv;
 
-      // Compute Osc2 first so it can modulate Osc1 (FM/PM)
+      // Compute Osc2 first so it can modulate Osc1 (FM/PM). Note: o2raw stays
+      // un-amped so FM still works when Osc2 is visually silenced (Amp=0).
       float c2 = axisCoord(uv, uO2.y);
       float o2raw = wave(c2 * uO2.z * TAU + uO2.w, uO2.x);
-      float o2 = o2raw * uO2Amp;
-      o2 = o2 * 0.5 + 0.5;
+      float o2 = o2raw * 0.5 + 0.5;
 
-      // Osc1 with optional phase modulation from Osc2
+      // Osc1 with optional phase modulation from Osc2 (FM uses o2raw, not o2)
       float c1 = axisCoord(uv, uO1.y);
       float fmPhase = uFmOn > 0.5 ? o2raw * uFmAmt * TAU : 0.0;
-      float o1 = wave(c1 * uO1.z * TAU + uO1.w + fmPhase, uO1.x) * uO1Amp;
-      o1 = o1 * 0.5 + 0.5;
+      float o1raw = wave(c1 * uO1.z * TAU + uO1.w + fmPhase, uO1.x);
+      float o1 = o1raw * 0.5 + 0.5;
 
       // Apply contrast/brightness per oscillator
       o1 = clamp(((o1 - 0.5) * uContrast + 0.5) * uBright, 0.0, 1.0);
       o2 = clamp(((o2 - 0.5) * uContrast + 0.5) * uBright, 0.0, 1.0);
 
-      // Each oscillator carries its own hue
-      vec3 col1 = hsv2rgb(vec3(uO1Hue, 1.0, 1.0)) * o1;
-      vec3 col2 = hsv2rgb(vec3(uO2Hue, 1.0, 1.0)) * o2;
+      // Each oscillator carries its own hue. Amp scales the final color contribution
+      // so Amp=0 truly silences the oscillator visually (no flat-gray haze) while the
+      // underlying wave math keeps running for FM and modulation routing.
+      vec3 col1 = hsv2rgb(vec3(uO1Hue, 1.0, 1.0)) * o1 * uO1Amp;
+      vec3 col2 = hsv2rgb(vec3(uO2Hue, 1.0, 1.0)) * o2 * uO2Amp;
 
       // Mix between separate-oscillators and ring-mod (multiplied)
       vec3 ringMod = col1 * col2 * 2.0;
